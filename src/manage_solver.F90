@@ -4,6 +4,7 @@ subroutine manage_solver
  implicit none
 !
  logical :: updatestat, savefield, saverst, saveprobe, savespanaverage
+ integer :: save_span_average_steps = 50
 !
 !call write_wallpressure
 !
