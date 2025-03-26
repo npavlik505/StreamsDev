@@ -24,9 +24,9 @@ ifeq (${COMPILE},"nvfortran") # mpif90 shipped with PGI compiler
 
     ifeq (${MODE},"opt") 
 		# everything after async is bonus, not sure if required
-        OLEVEL = -O3 -Mcuda=cuda11.5 -DUSE_CUDA -DCUDA_ASYNC
+        OLEVEL = -O3 -cuda -gpu=ccall -DUSE_CUDA -DCUDA_ASYNC
     else
-        OLEVEL = -Mcuda=ccall -DUSE_CUDA -DCUDA_ASYNC -g -DNOCUDAAWAREMPI
+        OLEVEL = -cuda -gpu=ccall -DUSE_CUDA -DCUDA_ASYNC -g -DNOCUDAAWAREMPI
     endif
 endif
 
@@ -108,7 +108,11 @@ static:
 	mpifort $(STATIC_MODS) $(STATIC_FILES) $(STATIC_MAIN) -o $(EXEC)
 
 f2py:
-	f2py --verbose --f90exec="mpifort" --f77exec="mpifort" -c mod_streams.F90 mod_sys.o euler.o $(OBJ_FILES) min_api.F90 -m libstreams
+	F2PY_FCOMPILER=nv \
+	F90=$(shell which mpifort) \
+	NPY_DISTUTILS_APPEND_FLAGS=1 \
+	FFLAGS="$(FFLAGS)" LDFLAGS="$(LDFLAGS)" \
+	f2py --fcompiler=nv -c libstreams.pyf $(OBJ_MODS) min_api.o -m libstreams
 
 .PHONY: clean
 clean:
