@@ -112,7 +112,7 @@ f2py:
 	F90=$(shell which mpifort) \
 	NPY_DISTUTILS_APPEND_FLAGS=1 \
 	FFLAGS="$(FFLAGS)" LDFLAGS="$(LDFLAGS)" \
-	f2py --fcompiler=nv -c libstreams.pyf $(OBJ_MODS) min_api.o -m libstreams
+	f2py --fcompiler=nv -c libstreams.pyf $(OBJS) -m libstreams
 
 .PHONY: clean
 clean:
