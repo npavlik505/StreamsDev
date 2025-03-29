@@ -4,13 +4,14 @@ subroutine manage_solver
  implicit none
 !
  logical :: updatestat, savefield, saverst, saveprobe, savespanaverage
- integer :: save_span_average_steps = 50
 !
 !call write_wallpressure
 !
  updatestat = .false.
  savefield  = .false.
  saverst    = .false.
+ saveprobe = .false.
+ savespanaverage = .false.
 !
  if (mod(icyc,istat)==0) updatestat = .true.
  if (telaps>tsol(istore)) savefield = .true.

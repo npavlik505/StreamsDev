@@ -72,6 +72,9 @@ module mod_streams
  ! this is the shear stress along the x axis
  !f2py real*8, dimension(:), allocatable :: tauw_x
  real(mykind), dimension(:), allocatable :: tauw_x
+ 
+ ! the number of solver steps between outputting probe information / span average information
+ integer :: save_probe_steps, save_span_average_steps
 
  ! this is a 2D array in (X,Z) that determines what the y velocity should be at each coordinate
  ! it is of dimensions (nx_slot, nz_slot), and nx_slot,nz_slot are set on a per-mpi basis

@@ -52,7 +52,7 @@ OBJ_FILES = alloc.o bcdf.o bcextr.o bcfree.o bc.o bcrecyc.o bcrelax.o bcshk.o bc
     generatewmean.o heatflux_compute.o init_channel.o init.o initurb.o init_windtunnel.o manage_solver.o osw.o pgrad.o \
     prims.o printres.o readdf.o readgrid.o readinp.o readrst.o readstat.o recyc.o rk.o sensor.o \
     setup.o solver.o startmpi.o stats.o step.o target_reystress.o tbforce.o updateghost.o utility.o utyibm.o \
-    visflx.o writedf.o writefield.o writefieldvtk.o writegridplot3d.o writerst.o \
+    visflx.o writedf.o writefield.o writefieldvtk.o writegridplot3d.o write_probe_data.o writerst.o \
     writestatbl.o writestatchann.o writestat.o writestatzbl.o write_wallpressure.o visflx_stag.o \
 	bcblow.o dissipation.o dealloc.o
 
@@ -65,7 +65,7 @@ STATIC_FILES = alloc.F90 bcdf.F90 bcextr.F90 bcfree.F90 bc.F90 bcrecyc.F90 bcrel
     generatewmean.F90 heatflux_compute.F90 init_channel.F90 init.F90 initurb.F90 init_windtunnel.F90 manage_solver.F90 osw.F90 pgrad.F90 \
     prims.F90 printres.F90 readdf.F90 readgrid.F90 readinp.F90 readrst.F90 readstat.F90 recyc.F90 rk.F90 sensor.F90 \
     setup.F90 solver.F90 startmpi.F90 stats.F90 step.F90 target_reystress.F90 tbforce.F90 updateghost.F90 utility.F90 utyibm.F90 \
-    visflx.F90 writedf.F90 writefield.F90 writefieldvtk.F90 writegridplot3d.F90 writerst.F90 \
+    visflx.F90 writedf.F90 writefield.F90 writefieldvtk.F90 writegridplot3d.F90 write_probe_data.F90 writerst.F90 \
     writestatbl.F90 writestatchann.F90 writestat.F90 writestatzbl.F90 write_wallpressure.F90 visflx_stag.F90 \
 	bcblow.F90 dissipation.F90 dealloc.F90
 
@@ -112,7 +112,7 @@ f2py:
 	F90=$(shell which mpifort) \
 	NPY_DISTUTILS_APPEND_FLAGS=1 \
 	FFLAGS="$(FFLAGS)" LDFLAGS="$(LDFLAGS)" \
-	f2py --fcompiler=nv -c libstreams.pyf $(OBJS) -m libstreams
+	f2py --fcompiler=nv -c libstreams.pyf min_api.o mod_streams.o $(OBJ_FILES) mod_sys.o euler.o -m libstreams
 
 .PHONY: clean
 clean:
