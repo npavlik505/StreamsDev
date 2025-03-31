@@ -127,3 +127,66 @@ subroutine wrap_deallocate_all() bind(C, name="wrap_deallocate_all")
     call deallocate_all()
 end subroutine wrap_deallocate_all
 
+subroutine wrap_get_x(x_out) bind(C, name="wrap_get_x")
+    use mod_streams
+    implicit none
+    real*8, intent(out) :: x_out(:)
+    x_out = x
+end subroutine wrap_get_x
+
+subroutine wrap_get_y(y_out) bind(C, name="wrap_get_y")
+    use mod_streams
+    implicit none
+    real*8, intent(out) :: y_out(:)
+    y_out = y
+end subroutine wrap_get_y
+
+subroutine wrap_get_z(z_out) bind(C, name="wrap_get_z")
+    use mod_streams
+    implicit none
+    real*8, intent(out) :: z_out(:)
+    z_out = z
+end subroutine wrap_get_z
+
+subroutine wrap_get_w(w_out) bind(C, name="wrap_get_w")
+    use mod_streams
+    implicit none
+    real*8, intent(out) :: w_out(:,:,:,:)
+    w_out = w
+end subroutine wrap_get_w
+
+subroutine wrap_get_tauw_x(tauw_out) bind(C, name="wrap_get_tauw_x")
+    use mod_streams
+    implicit none
+    real*8, intent(out) :: tauw_out(:)
+    tauw_out = tauw_x
+end subroutine wrap_get_tauw_x
+
+subroutine wrap_get_x_start_slot(val) bind(C, name="wrap_get_x_start_slot")
+  use iso_c_binding
+  use mod_streams, only: x_start_slot
+  integer(c_int), intent(out) :: val
+  val = x_start_slot
+end subroutine
+
+subroutine wrap_get_nx_slot(val) bind(C, name="wrap_get_nx_slot")
+  use iso_c_binding
+  use mod_streams, only: nx_slot
+  integer(c_int), intent(out) :: val
+  val = nx_slot
+end subroutine
+
+subroutine wrap_get_nz_slot(val) bind(C, name="wrap_get_nz_slot")
+  use iso_c_binding
+  use mod_streams, only: nz_slot
+  integer(c_int), intent(out) :: val
+  val = nz_slot
+end subroutine
+
+subroutine wrap_get_blowing_bc_slot_velocity(arr) bind(C, name="wrap_get_blowing_bc_slot_velocity")
+  use iso_c_binding
+  use mod_streams, only: blowing_bc_slot_velocity, mykind
+  real(c_double), intent(out) :: arr(:,:)
+  arr = blowing_bc_slot_velocity
+end subroutine
+

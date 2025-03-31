@@ -9,6 +9,7 @@ import libstreams as streams
 # we have to start MPI here before importing the mpi4py library
 # otherwise, there will be an error in the streams code when they attempt to 
 # initialize
+print("ATTRIBUTES IN libstreams:", dir(streams))
 streams.wrap_startmpi()
 
 from mpi4py import MPI
@@ -25,7 +26,7 @@ import globals
 globals.init()
 from globals import rank, comm
 
-# import io_utils
+import io_utils
 import numpy as np
 from config import Config
 import utils
@@ -65,10 +66,10 @@ setup_solver()
 #
 # Initialize datasets and HDF5 output files
 #
-# flowfields = io_utils.IoFile("/distribute_save/flowfields.h5")
-# span_averages = io_utils.IoFile("/distribute_save/span_averages.h5")
-# trajectories = io_utils.IoFile("/distribute_save/trajectories.h5")
-# mesh_h5 = io_utils.IoFile("/distribute_save/mesh.h5")
+flowfields = io_utils.IoFile("/distribute_save/flowfields.h5")
+span_averages = io_utils.IoFile("/distribute_save/span_averages.h5")
+trajectories = io_utils.IoFile("/distribute_save/trajectories.h5")
+mesh_h5 = io_utils.IoFile("/distribute_save/mesh.h5")
 
 grid_shape = [config.grid.nx, config.grid.ny, config.grid.nz]
 span_average_shape = [config.grid.nx, config.grid.ny]
@@ -78,31 +79,54 @@ if not (config.temporal.full_flowfield_io_steps is None):
     flowfield_writes = int(math.ceil(config.temporal.num_iter / config.temporal.full_flowfield_io_steps))
 else:
     flowfield_writes = 0
-# velocity_dset = io_utils.VectorField3D(flowfields, [5, *grid_shape], flowfield_writes, "velocity", rank)
-# flowfield_time_dset = io_utils.Scalar1D(flowfields, [1], flowfield_writes, "time", rank)
+velocity_dset = io_utils.VectorField3D(flowfields, [5, *grid_shape], flowfield_writes, "velocity", rank)
+flowfield_time_dset = io_utils.Scalar1D(flowfields, [1], flowfield_writes, "time", rank)
 
 # span average files
 numwrites = int(math.ceil(config.temporal.num_iter / config.temporal.span_average_io_steps))
 
 # this is rho, u, v, w, E (already normalized from the rho u, rho v... values from streams)
-# span_average_dset = io_utils.VectorFieldXY2D(span_averages, [5, *span_average_shape], numwrites, "span_average", rank)
-# shear_stress_dset = io_utils.ScalarFieldX1D(span_averages, [config.grid.nx], numwrites, "shear_stress", rank)
-# span_average_time_dset = io_utils.Scalar0D(span_averages, [1], numwrites, "time", rank)
-# dissipation_rate_dset = io_utils.Scalar0D(span_averages, [1], numwrites, "dissipation_rate", rank)
-# energy_dset = io_utils.Scalar0D(span_averages, [1], numwrites, "energy", rank)
+span_average_dset = io_utils.VectorFieldXY2D(span_averages, [5, *span_average_shape], numwrites, "span_average", rank)
+shear_stress_dset = io_utils.ScalarFieldX1D(span_averages, [config.grid.nx], numwrites, "shear_stress", rank)
+span_average_time_dset = io_utils.Scalar0D(span_averages, [1], numwrites, "time", rank)
+dissipation_rate_dset = io_utils.Scalar0D(span_averages, [1], numwrites, "dissipation_rate", rank)
+energy_dset = io_utils.Scalar0D(span_averages, [1], numwrites, "energy", rank)
 
 # trajectories files
-# dt_dset = io_utils.Scalar0D(trajectories, [1], config.temporal.num_iter, "dt", rank)
-# amplitude_dset = io_utils.Scalar0D(trajectories, [1], config.temporal.num_iter, "jet_amplitude", rank)
+dt_dset = io_utils.Scalar0D(trajectories, [1], config.temporal.num_iter, "dt", rank)
+amplitude_dset = io_utils.Scalar0D(trajectories, [1], config.temporal.num_iter, "jet_amplitude", rank)
 
 # mesh datasets
-# x_mesh_dset = io_utils.Scalar1DX(mesh_h5, [config.grid.nx], 1, "x_grid", rank)
-# y_mesh_dset = io_utils.Scalar1D(mesh_h5, [config.grid.ny], 1, "y_grid", rank)
-# z_mesh_dset = io_utils.Scalar1D(mesh_h5, [config.grid.nz], 1, "z_grid", rank)
+x_mesh_dset = io_utils.Scalar1DX(mesh_h5, [config.grid.nx], 1, "x_grid", rank)
+y_mesh_dset = io_utils.Scalar1D(mesh_h5, [config.grid.ny], 1, "y_grid", rank)
+z_mesh_dset = io_utils.Scalar1D(mesh_h5, [config.grid.nz], 1, "z_grid", rank)
 
-x_mesh = streams.mod_streams.x[config.x_start():config.x_end()]
-y_mesh = streams.mod_streams.y[config.y_start():config.y_end()]
-z_mesh = streams.mod_streams.z[config.z_start():config.z_end()]
+
+
+# Since mod_streams definitions must individually wrapped. Below is "mod_streams workaround 1"
+# x_mesh = streams.mod_streams.x[config.x_start():config.x_end()]
+# y_mesh = streams.mod_streams.y[config.y_start():config.y_end()]
+# z_mesh = streams.mod_streams.z[config.z_start():config.z_end()]
+
+def get_x_slice():
+    arr = np.empty(config.grid.nx, dtype=np.float64)
+    streams.wrap_get_x(arr)
+    return arr[config.x_start():config.x_end()]
+    
+def get_y_slice():
+    arr = np.empty(config.grid.ny, dtype=np.float64)
+    streams.wrap_get_y(arr)
+    return arr[config.y_start():config.y_end()]
+    
+def get_z_slice():
+    arr = np.empty(config.grid.nz, dtype=np.float64)
+    streams.wrap_get_z(arr)
+    return arr[config.z_start():config.z_end()]
+
+x_mesh = get_x_slice()
+y_mesh = get_y_slice()
+z_mesh = get_z_slice()
+# End of "mod_streams workaround 1"
 
 x_mesh_dset.write_array(x_mesh)
 y_mesh_dset.write_array(y_mesh)

@@ -45,28 +45,30 @@ class PolynomialFactory():
 
 class JetActuator():
     def __init__(self, rank: int, config: Config, slot_start: int, slot_end: int):
-
         self.rank = rank
         self.config = config
 
-        vertex_x = (slot_start +  slot_end) / 2
+        vertex_x = (slot_start + slot_end) / 2
         self.factory = PolynomialFactory(vertex_x, slot_start, slot_end)
 
-        self.local_slot_start_x = streams.mod_streams.x_start_slot
-        self.local_slot_nx = streams.mod_streams.nx_slot
-        self.local_slot_nz = streams.mod_streams.nz_slot
+        def get_int_from_wrapper(wrapper):
+            val = np.empty(1, dtype=np.int32)
+            wrapper(val)
+            return val[0]
 
-        # if x_start_slot == -1 then we do not have a matrix
-        # allocated on this MPI process
-        self.has_slot = streams.mod_streams.x_start_slot != -1
+        self.local_slot_start_x = get_int_from_wrapper(streams.wrap_get_x_start_slot)
+        self.local_slot_nx = get_int_from_wrapper(streams.wrap_get_nx_slot)
+        self.local_slot_nz = get_int_from_wrapper(streams.wrap_get_nz_slot)
+
+        self.has_slot = self.local_slot_start_x != -1
 
         if self.has_slot:
-            #print(self.local_slot_nx, self.local_slot_nz, self.local_slot_start_x)
-            self.bc_velocity = streams.mod_streams.blowing_bc_slot_velocity[:, :]
+            arr = np.empty((self.local_slot_nx, self.local_slot_nz), dtype=np.float64)
+            streams.wrap_get_blowing_bc_slot_velocity(arr)
+            self.bc_velocity = arr
 
     def set_amplitude(self, amplitude: float):
         # WARNING: copying to GPU and copying to CPU must happen on ALL mpi procs
-        # if we have a matrix, we can adjust the velocity of the blowing actuator
         streams.wrap_copy_blowing_bc_to_cpu()
 
         if not self.has_slot:
@@ -81,16 +83,13 @@ class JetActuator():
             local_x = self.local_slot_start_x + idx
             global_x = self.config.local_to_global_x(local_x, self.rank)
 
-            velo =  poly.evaluate(global_x)
-            #print(f"velocity at idx {idx} / local x {local_x} / global x {global_x} ::: {velo}")
-
+            velo = poly.evaluate(global_x)
             self.bc_velocity[idx, 0:self.local_slot_nz] = velo
 
-        #print(f"array shape for BC", self.bc_velocity.shape)
-
-        # finally, copy everything back to the GPU
+        # copy everything back to the GPU
         streams.wrap_copy_blowing_bc_to_gpu()
         return None
+
 
 class AbstractActuator(ABC):
     @abstractmethod
