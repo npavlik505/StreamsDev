@@ -56,7 +56,7 @@ OBJ_FILES = alloc.o bcdf.o bcextr.o bcfree.o bc.o bcrecyc.o bcrelax.o bcshk.o bc
     writestatbl.o writestatchann.o writestat.o writestatzbl.o write_wallpressure.o visflx_stag.o \
 	bcblow.o dissipation.o dealloc.o
 
-PY_API_OBJS = min_api.o
+PY_API_OBJS = min_api.o mod_api.o
 
 STATIC_FILES = alloc.F90 bcdf.F90 bcextr.F90 bcfree.F90 bc.F90 bcrecyc.F90 bcrelax.F90 bcshk.F90 bcswap.F90 \
     bcwall.F90 bcwall_pl.F90 bcwall_staggered.F90 check_input.F90 computeav.F90 computemetrics.F90 \
@@ -107,12 +107,38 @@ $(EXEC): $(OBJS) $(PY_API_OBJS) Makefile $(wildcard makefile.inc)
 static:
 	mpifort $(STATIC_MODS) $(STATIC_FILES) $(STATIC_MAIN) -o $(EXEC)
 
-f2py:
+libstreamsMin.pyf:
+	f2py -m libstreamsMin -h libstreamsMin.pyf --overwrite-signature min_api.F90
+
+libstreamsMin.pyf.raw: libstreamsMin.pyf
+	cp libstreamsMin.pyf libstreamsMin.pyf.raw
+
+libstreamsMod.pyf:
+	f2py -m libstreamsMod -h libstreamsMod.pyf --overwrite-signature mod_api.F90
+
+libstreamsMod.pyf.raw: libstreamsMod.pyf
+	cp libstreamsMod.pyf libstreamsMod.pyf.raw
+
+patched_pyfs: libstreamsMin.pyf.raw libstreamsMod.pyf.raw
+	cp libstreamsMin.pyf.raw libstreamsMin.pyf
+	cp libstreamsMod.pyf.raw libstreamsMod.pyf
+	python3 /streams-utils/patch_pyf.py
+
+f2pyMin: patched_pyfs
 	F2PY_FCOMPILER=nv \
 	F90=$(shell which mpifort) \
 	NPY_DISTUTILS_APPEND_FLAGS=1 \
 	FFLAGS="$(FFLAGS)" LDFLAGS="$(LDFLAGS)" \
-	f2py --fcompiler=nv -c libstreams.pyf min_api.o mod_streams.o $(OBJ_FILES) mod_sys.o euler.o -m libstreams
+	f2py --fcompiler=nv -c libstreamsMin.pyf min_api.o mod_streams.o $(OBJ_FILES) mod_sys.o euler.o -m libstreamsMin
+
+f2pyMod: patched_pyfs
+	F2PY_FCOMPILER=nv \
+	F90=$(shell which mpifort) \
+	NPY_DISTUTILS_APPEND_FLAGS=1 \
+	FFLAGS="$(FFLAGS)" LDFLAGS="$(LDFLAGS)" \
+	f2py --fcompiler=nv -c libstreamsMod.pyf mod_api.o min_api.o mod_streams.o $(OBJ_FILES) mod_sys.o euler.o -m libstreamsMod
+
+build-f2py: f2pyMin f2pyMod
 
 .PHONY: clean
 clean:
