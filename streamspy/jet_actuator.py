@@ -52,21 +52,20 @@ class JetActuator():
         vertex_x = (slot_start + slot_end) / 2
         self.factory = PolynomialFactory(vertex_x, slot_start, slot_end)
 
-        def get_int_from_wrapper(wrapper):
-            val = np.empty(1, dtype=np.int32)
-            wrapper(val)
-            return val[0]
+        self.local_slot_start_x = int(streamsMod.wrap_get_x_start_slot())
+        self.local_slot_nx = int(streamsMod.wrap_get_nx_slot())
+        self.local_slot_nz = int(streamsMod.wrap_get_nz_slot())
 
-        self.local_slot_start_x = get_int_from_wrapper(streamsMod.wrap_get_x_start_slot)
-        self.local_slot_nx = get_int_from_wrapper(streamsMod.wrap_get_nx_slot)
-        self.local_slot_nz = get_int_from_wrapper(streamsMod.wrap_get_nz_slot)
 
         self.has_slot = self.local_slot_start_x != -1
 
         if self.has_slot:
-            arr = np.empty((self.local_slot_nx, self.local_slot_nz), dtype=np.float64)
-            streams.wrap_get_blowing_bc_slot_velocity(arr)
-            self.bc_velocity = arr
+            print(f'local slot nx is {self.local_slot_nx}')
+            print(f'local slot nz is {self.local_slot_nz}')
+            n = self.local_slot_nx * self.local_slot_nz
+            arr = np.empty(n, dtype=np.float64)
+            streamsMod.wrap_get_blowing_bc_slot_velocity(arr)
+            self.bc_velocity = arr.reshape((self.local_slot_nx, self.local_slot_nz))
 
     def set_amplitude(self, amplitude: float):
         # WARNING: copying to GPU and copying to CPU must happen on ALL mpi procs

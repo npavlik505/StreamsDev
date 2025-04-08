@@ -43,6 +43,28 @@ with open("/input/input.json", "r") as f:
     config = Config.from_json(json_data)
 
 #
+# allocate arrays so we dont need to reallocate in the solver loop
+#
+
+span_average = np.zeros([5, config.nx_mpi(), config.ny_mpi()], dtype=np.float64)
+temp_field = np.zeros((config.nx_mpi(), config.ny_mpi(), config.nz_mpi()), dtype=np.float64)
+dt_array = np.zeros(1)
+amplitude_array = np.zeros(1)
+time_array = np.zeros(1)
+dissipation_rate_array = np.zeros(1)
+energy_array = np.zeros(1)
+
+#
+# execute streams setup routines
+#
+
+def setup_solver():
+    streamsMin.wrap_setup()
+    streamsMin.wrap_init_solver()
+
+setup_solver()
+
+#
 # define functions to access mod_streams variables
 #
 
@@ -80,27 +102,6 @@ def get_dtglobal():
     val = np.empty(1, dtype=np.float64)
     streamsMod.wrap_get_dtglobal(val)
     return float(val[0])
-
-#
-# allocate arrays so we dont need to reallocate in the solver loop
-#
-span_average = np.zeros([5, config.nx_mpi(), config.ny_mpi()], dtype=np.float64)
-temp_field = np.zeros((config.nx_mpi(), config.ny_mpi(), config.nz_mpi()), dtype=np.float64)
-dt_array = np.zeros(1)
-amplitude_array = np.zeros(1)
-time_array = np.zeros(1)
-dissipation_rate_array = np.zeros(1)
-energy_array = np.zeros(1)
-
-#
-# execute streams setup routines
-#
-
-def setup_solver():
-    streamsMin.wrap_setup()
-    streamsMin.wrap_init_solver()
-
-setup_solver()
 
 # initialize files
 
@@ -155,6 +156,8 @@ z_mesh = get_z_slice()
 # End of "mod_streams workaround 1"
 
 x_mesh_dset.write_array(x_mesh)
+print("y_mesh.shape:", y_mesh.shape)
+print("Expected shape:", config.grid.ny)
 y_mesh_dset.write_array(y_mesh)
 z_mesh_dset.write_array(z_mesh)
 

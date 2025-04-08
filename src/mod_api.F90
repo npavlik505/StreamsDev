@@ -69,6 +69,7 @@ subroutine wrap_get_nx_slot(val)
     use mod_streams, only: nx_slot
     implicit none
     integer, intent(out) :: val
+    print *, '>>> wrap_get_nx_slot called, nx_slot =', nx_slot
     val = nx_slot
 end subroutine wrap_get_nx_slot
 

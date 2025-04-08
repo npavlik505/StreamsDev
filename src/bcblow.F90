@@ -107,6 +107,7 @@ subroutine local_slot_locations()
 
     integer :: mpi_xstart, mpi_xend
     integer :: true_slot_start, slot_length, slot_end_local, nxmax
+    integer :: x_end_slot ! For debugging
 
     if (masterproc) then
         write(*, *) "slot start and slot end (global) is ", slot_start_x_global, slot_end_x_global
@@ -161,6 +162,10 @@ subroutine local_slot_locations()
         ! if x_start_slot = 1, x_end_slot = 3 then we clearly have 3 locations on the x axis where
         ! we are forcing, but 3-1 = 2, hence the +1
         nx_slot = slot_end_local - x_start_slot + 1
+        x_end_slot = slot_end_local
+	print *, ">>> [bcblow] x_start_slot =", x_start_slot
+	print *, ">>> [bcblow] x_end_slot   =", x_end_slot
+	print *, ">>> [bcblow] nx_slot      =", nx_slot
 
         nz_slot = nz
     else

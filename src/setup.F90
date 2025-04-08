@@ -4,7 +4,7 @@ subroutine setup
 !
  use mod_streams
  implicit none
-
+ print *, ">>> [setup] entering setup()"
 ! find out the dimensions of the blowing slot
 !
 !===================================================
