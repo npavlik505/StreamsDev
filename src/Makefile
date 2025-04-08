@@ -136,7 +136,7 @@ f2pyMod: patched_pyfs
 	F90=$(shell which mpifort) \
 	NPY_DISTUTILS_APPEND_FLAGS=1 \
 	FFLAGS="$(FFLAGS)" LDFLAGS="$(LDFLAGS)" \
-	f2py --fcompiler=nv -c libstreamsMod.pyf mod_api.o min_api.o mod_streams.o $(OBJ_FILES) mod_sys.o euler.o -m libstreamsMod
+	f2py --fcompiler=nv -c libstreamsMod.pyf mod_api.o mod_streams.o $(OBJ_FILES) mod_sys.o euler.o -m libstreamsMod
 
 build-f2py: f2pyMin f2pyMod
 

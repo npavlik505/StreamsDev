@@ -62,17 +62,17 @@ def get_x_start_slot():
     return int(val[0])
 
 def get_x_slice():
-    arr = np.empty(config.grid.nx, dtype=np.float64)
+    arr = np.empty(config.grid.nx + 2 * config.grid.ng, dtype=np.float64)
     streamsMod.wrap_get_x(arr)
     return arr[config.x_start():config.x_end()]
 
 def get_y_slice():
-    arr = np.empty(config.grid.ny, dtype=np.float64)
+    arr = np.empty(config.grid.ny + 2 * config.grid.ng, dtype=np.float64)
     streamsMod.wrap_get_y(arr)
     return arr[config.y_start():config.y_end()]
 
 def get_z_slice():
-    arr = np.empty(config.grid.nz, dtype=np.float64)
+    arr = np.empty(config.grid.nz + 2 * config.grid.ng, dtype=np.float64)
     streamsMod.wrap_get_z(arr)
     return arr[config.z_start():config.z_end()]
 
