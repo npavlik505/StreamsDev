@@ -9,8 +9,9 @@ subroutine wrap_setup() bind(C, name="wrap_setup")
     use iso_c_binding
     !f2py intent(c) wrap_setup
     !f2py intent(hide)
-    use mod_streams, only: tauw_x
+    use mod_streams
     call setup()
+    print *, '>>> end of setup: nx_slot = ', nx_slot
 end subroutine wrap_setup
 
 subroutine wrap_init_solver() bind(C, name="wrap_init_solver")

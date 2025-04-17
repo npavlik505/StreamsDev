@@ -73,25 +73,25 @@ STATIC_MODS = mod_streams.F90 mod_sys.F90 euler.F90
 
 STATIC_MAIN = main.F90
 
-
-# -- bc_constant_input.o bcblow.o
-
 OBJ_MODS = mod_streams.o mod_sys.o euler.o
 OBJS = $(OBJ_MODS) $(OBJ_FILES) $(PY_API_OBJS) $(MAIN)
 EXEC = streams.exe
 #LDFLAGS = 
 SHARED = -fPIC
 
-#----------------------------------------------------------------------
-# Additional package
-#----------------------------------------------------------------------
--include makefile.inc
-#----------------------------------------------------------------------
-
-$(EXEC): $(OBJS) $(PY_API_OBJS) Makefile $(wildcard makefile.inc)
+# Creating streams.exe
+$(EXEC): $(OBJS) Makefile $(wildcard makefile.inc)
 	$(FC) $(PRECFLAGS) $(OLEVEL) -o $@ $(OBJS) $(FCLIBS) $(LDFLAGS)
 
-# script for compiling individual modules together
+# Ensure min_api and mod_api use the same mod_streams mod
+mod_streams.o: mod_streams.F90
+	 $(FC) $(PRECFLAGS) $(OLEVEL) $(SHARED) -c $< -o $@
+
+mod_streams.mod: mod_streams.o
+
+mod_api.o min_api.o: mod_streams.mod
+
+# Rules for converting .F90, .cpp, and .cxx files into object files
 %.o:%.F90 Makefile $(wildcard makefile.inc)
 	$(FC) $(PRECFLAGS) $(INCLUDE) $(OLEVEL) $(SHARED) -c $< -o $@
 
@@ -101,45 +101,26 @@ $(EXEC): $(OBJS) $(PY_API_OBJS) Makefile $(wildcard makefile.inc)
 %.o:%.cxx Makefile $(wildcard makefile.inc)
 	$(CXX) $(PRECFLAGS) $(INCLUDE) -O2 -c $< -o $@
 
-%.o:%.F90 Makefile $(wildcard makefile.inc)
-	$(FC) $(PRECFLAGS) $(INCLUDE) $(OLEVEL) $(SHARED) -c $< -o $@
-
+# f2py Wrapping routine (runs at "make f2py" in build.apptainer) 
 static:
 	mpifort $(STATIC_MODS) $(STATIC_FILES) $(STATIC_MAIN) -o $(EXEC)
 
-libstreamsMin.pyf:
-	f2py -m libstreamsMin -h libstreamsMin.pyf --overwrite-signature min_api.F90
+libstreams.pyf:
+	f2py -m libstreams -h libstreams.pyf --overwrite-signature min_api.F90 mod_api.F90
 
-libstreamsMin.pyf.raw: libstreamsMin.pyf
-	cp libstreamsMin.pyf libstreamsMin.pyf.raw
-
-libstreamsMod.pyf:
-	f2py -m libstreamsMod -h libstreamsMod.pyf --overwrite-signature mod_api.F90
-
-libstreamsMod.pyf.raw: libstreamsMod.pyf
-	cp libstreamsMod.pyf libstreamsMod.pyf.raw
-
-patched_pyfs: libstreamsMin.pyf.raw libstreamsMod.pyf.raw
-	cp libstreamsMin.pyf.raw libstreamsMin.pyf
-	cp libstreamsMod.pyf.raw libstreamsMod.pyf
+patched_pyfs: libstreams.pyf
 	python3 /streams-utils/patch_pyf.py
 
-f2pyMin: patched_pyfs
+f2py: patched_pyfs $(PY_API_OBJS) $(OBJ_FILES) $(OBJ_MODS)
 	F2PY_FCOMPILER=nv \
 	F90=$(shell which mpifort) \
 	NPY_DISTUTILS_APPEND_FLAGS=1 \
 	FFLAGS="$(FFLAGS)" LDFLAGS="$(LDFLAGS)" \
-	f2py --fcompiler=nv -c libstreamsMin.pyf min_api.o mod_streams.o $(OBJ_FILES) mod_sys.o euler.o -m libstreamsMin
+	f2py --fcompiler=nv -c libstreams.pyf \
+	     $(PY_API_OBJS) $(OBJ_FILES) $(OBJ_MODS) \
+	     -m libstreams
 
-f2pyMod: patched_pyfs
-	F2PY_FCOMPILER=nv \
-	F90=$(shell which mpifort) \
-	NPY_DISTUTILS_APPEND_FLAGS=1 \
-	FFLAGS="$(FFLAGS)" LDFLAGS="$(LDFLAGS)" \
-	f2py --fcompiler=nv -c libstreamsMod.pyf mod_api.o mod_streams.o $(OBJ_FILES) mod_sys.o euler.o -m libstreamsMod
-
-build-f2py: f2pyMin f2pyMod
-
+# Files to delete when running "make clean"
 .PHONY: clean
 clean:
-	$(RM) $(EXEC) $(MAIN) $(OBJS) $(OBJ_MODS) $(GRID) *.mod cfz_*.dat *.vtr *.q *.csv *.prof *.bin cf_*.dat d*g.dat *.xyz wavplot_*.dat csv_data/* spans/* *.vtk plotxy*.dat x.dat y.dat z.dat mod_streams_pre.F90 mod_streams.pyf
+	$(RM) $(EXEC) $(MAIN) $(OBJS) $(OBJ_MODS) $(GRID) *.mod *.so *.pyf *.pyf.raw cfz_*.dat *.vtr *.q *.csv *.prof *.bin cf_*.dat d*g.dat *.xyz wavplot_*.dat csv_data/* spans/* *.vtk plotxy*.dat x.dat y.dat z.dat mod_streams_pre.F90 mod_streams.pyf

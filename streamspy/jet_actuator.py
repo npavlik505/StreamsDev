@@ -1,7 +1,6 @@
 import numpy as np
 from config import Config, JetMethod, Jet
-import libstreamsMin as streamsMin
-import libstreamsMod as streamsMod
+import libstreams as streams
 from abc import ABC, abstractmethod
 from typing import Optional, Dict
 import utils
@@ -50,29 +49,31 @@ class JetActuator():
         self.config = config
 
         vertex_x = (slot_start + slot_end) / 2
+        print(f'vertex_x is {vertex_x}')
         self.factory = PolynomialFactory(vertex_x, slot_start, slot_end)
 
-        self.local_slot_start_x = int(streamsMod.wrap_get_x_start_slot())
-        self.local_slot_nx = int(streamsMod.wrap_get_nx_slot())
-        self.local_slot_nz = int(streamsMod.wrap_get_nz_slot())
-
+        self.local_slot_start_x = int(streams.wrap_get_x_start_slot())
+        print(f'local slot start x is {self.local_slot_start_x}')
+        self.local_slot_nx = int(streams.wrap_get_nx_slot())
+        print(f'local slot nx is {self.local_slot_nx}')
+        self.local_slot_nz = streams.wrap_get_nz_slot()
+        print(f'local slot nz is {self.local_slot_nz}')
 
         self.has_slot = self.local_slot_start_x != -1
 
         if self.has_slot:
-            print(f'local slot nx is {self.local_slot_nx}')
-            print(f'local slot nz is {self.local_slot_nz}')
             n = self.local_slot_nx * self.local_slot_nz
+            print(f'self.local_slot_nx * self.local_slot_nz = {n}')
             arr = np.empty(n, dtype=np.float64)
-            streamsMod.wrap_get_blowing_bc_slot_velocity(arr)
+            streams.wrap_get_blowing_bc_slot_velocity(arr, n)
             self.bc_velocity = arr.reshape((self.local_slot_nx, self.local_slot_nz))
 
     def set_amplitude(self, amplitude: float):
         # WARNING: copying to GPU and copying to CPU must happen on ALL mpi procs
-        streamsMin.wrap_copy_blowing_bc_to_cpu()
+        streams.wrap_copy_blowing_bc_to_cpu()
 
         if not self.has_slot:
-            streamsMin.wrap_copy_blowing_bc_to_gpu()
+            streams.wrap_copy_blowing_bc_to_gpu()
             return None
 
         # calculate the equation of the polynomial that the velocity of the jet
@@ -87,7 +88,7 @@ class JetActuator():
             self.bc_velocity[idx, 0:self.local_slot_nz] = velo
 
         # copy everything back to the GPU
-        streamsMin.wrap_copy_blowing_bc_to_gpu()
+        streams.wrap_copy_blowing_bc_to_gpu()
         return None
 
 
