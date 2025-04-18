@@ -69,50 +69,16 @@ def setup_solver():
 
 setup_solver()
 
-# streams.wrap_set_nx_slot(42)
-# print("libstreamsMin slot:", streamsMin.wrap_get_nx_slot())
-# print("libstreamsMod slot:", streamsMod.wrap_get_nx_slot())
+w1, w2, w3, w4 = streams.wrap_get_w_shape()
+print('W shape (conservative vector):')
+print(f'n1: {w1}')
+print(f'n2: {w2}')
+print(f'n3: {w3}')
+print(f'n4: {w4}')
 
-#
-# define functions to access mod_streams variables
-#
+tauwx = streams.wrap_get_tauw_x_shape()
+print(f'tauwx: {tauwx}') 
 
-def get_w(size):
-    arr = np.empty(size, dtype=np.float64)
-    streams.wrap_get_w(arr, size)
-    return arr
-
-def get_blowing_bc_slot_velocity(size):
-    arr = np.empty(size, dtype=np.float64)
-    streams.wrap_get_blowing_bc_slot_velocity(arr, size)
-    return arr
-
-def get_x_start_slot():
-    val = np.empty(1, dtype=np.int32)
-    streams.wrap_get_x_start_slot(val)
-    return int(val[0])
-
-def get_x_slice():
-    arr = np.empty(config.grid.nx + 2 * config.grid.ng, dtype=np.float64)
-    streams.wrap_get_x(arr)
-    return arr[config.x_start():config.x_end()]
-
-def get_y_slice():
-    arr = np.empty(config.grid.ny + 2 * config.grid.ng, dtype=np.float64)
-    streams.wrap_get_y(arr)
-    return arr[config.y_start():config.y_end()]
-
-def get_z_slice():
-    arr = np.empty(config.grid.nz + 2 * config.grid.ng, dtype=np.float64)
-    streams.wrap_get_z(arr)
-    return arr[config.z_start():config.z_end()]
-
-def get_dtglobal():
-    val = np.empty(1, dtype=np.float64)
-    streams.wrap_get_dtglobal(val)
-    return float(val[0])
-
-# initialize files
 
 #
 # Initialize datasets and HDF5 output files
@@ -159,15 +125,14 @@ z_mesh_dset = io_utils.Scalar1D(mesh_h5, [config.grid.nz], 1, "z_grid", rank)
 # y_mesh = streams.mod_streams.y[config.y_start():config.y_end()]
 # z_mesh = streams.mod_streams.z[config.z_start():config.z_end()]
 
-x_mesh = get_x_slice()
+
+x_mesh = streams.wrap_get_x(config.x_start(), config.x_end())
 print(f'x_mesh values: {x_mesh}')
-y_mesh = get_y_slice()
-z_mesh = get_z_slice()
+y_mesh = streams.wrap_get_y(config.y_start(), config.y_end())
+z_mesh = streams.wrap_get_z(config.z_start(), config.z_end())
 # End of "mod_streams workaround 1"
 
 x_mesh_dset.write_array(x_mesh)
-print("y_mesh.shape:", y_mesh.shape)
-print("Expected shape:", config.grid.ny)
 y_mesh_dset.write_array(y_mesh)
 z_mesh_dset.write_array(z_mesh)
 
@@ -185,39 +150,42 @@ for i in range(config.temporal.num_iter):
 
     streams.wrap_step_solver()
 
-    time += streams.dtglobal
+    time += streams.wrap_get_dtglobal()
+    print(f'wrap_get_dtglobal value: {time}')
     time_array[:] = time
 
     if (i % config.temporal.span_average_io_steps) == 0:
         utils.hprint("writing span average to output")
         streams.wrap_copy_gpu_to_cpu()
-        streams_data_slice = config.slice_flowfield_array(streams.mod_streams.w)
+        streams_data_slice = config.slice_flowfield_array(streams.wrap_get_w(w1, w2, w3, w4))
         utils.calculate_span_averages(config, span_average, temp_field, streams_data_slice)
 
         span_average_dset.write_array(span_average)
 
         # also write shear stress information
-        streamsMin.wrap_tauw_calculate()
-        shear_stress_dset.write_array(streams.mod_streams.tauw_x)
+        streams.wrap_tauw_calculate()
+        shear_stress_dset.write_array(streams.wrap_get_tauw_x(tauwx))
 
         # write the time at which this data was collected
         span_average_time_dset.write_array(time_array)
 
         # calculate dissipation rate on GPU and store the result
-        streamsMin.wrap_dissipation_calculation()
-        dissipation_rate_array[:] = streams.mod_streams.dissipation_rate
+        streams.wrap_dissipation_calculation()
+        # dr = streams.wrap_get_dissipation_rate_shape()
+        dissipation_rate_array[:] = streams.wrap_get_dissipation_rate()
         dissipation_rate_dset.write_array(dissipation_rate_array)
         utils.hprint(f"dissipation is {dissipation_rate_array[0]}")
 
         # calculate energy on GPU and store the result
-        streamsMin.wrap_energy_calculation()
-        energy_array[:] = streamsMod.energy
+        streams.wrap_energy_calculation()
+        # e = streams.wrap_get_energy_shape()
+        energy_array[:] = streams.wrap_get_energy()
         energy_dset.write_array(energy_array)
 
         utils.hprint(f"energy is {energy_array[0]}")
 
     # save dt information for every step
-    dt_array[:] = streamsMod.dtglobal
+    dt_array[:] = streams.wrap_get_dtglobal()
     dt_dset.write_array(dt_array)
 
     # save amplitude at every step
@@ -227,8 +195,8 @@ for i in range(config.temporal.num_iter):
     if not (config.temporal.full_flowfield_io_steps is None):
         if (i % config.temporal.full_flowfield_io_steps) == 0:
             utils.hprint("writing flowfield")
-            streamsMin.wrap_copy_gpu_to_cpu()
-            velocity_dset.write_array(config.slice_flowfield_array(streamsMod.w))
+            streams.wrap_copy_gpu_to_cpu()
+            velocity_dset.write_array(config.slice_flowfield_array(streams.wrap_get_w(w1, w2, w3, w4)))
 
             # write the time at which this data was collected
             flowfield_time_dset.write_array(time_array)
@@ -236,10 +204,9 @@ for i in range(config.temporal.num_iter):
 
     if i == 5:
         print("reloading python module")
-        streamsMin.wrap_finalize_solver()
+        streams.wrap_finalize_solver()
         #streams.wrap_finalize()
-        del streamsMin
-        del streamsMod
+        del streams
         import libstreams as streams
         #importlib.reload(streams)
         #streams.wrap_startmpi()

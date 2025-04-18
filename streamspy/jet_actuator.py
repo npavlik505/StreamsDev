@@ -62,11 +62,12 @@ class JetActuator():
         self.has_slot = self.local_slot_start_x != -1
 
         if self.has_slot:
-            n = self.local_slot_nx * self.local_slot_nz
-            print(f'self.local_slot_nx * self.local_slot_nz = {n}')
-            arr = np.empty(n, dtype=np.float64)
-            streams.wrap_get_blowing_bc_slot_velocity(arr, n)
-            self.bc_velocity = arr.reshape((self.local_slot_nx, self.local_slot_nz))
+            sv1, sv2 = streams.wrap_get_blowing_bc_slot_velocity_shape()
+            print('Slot Velocity shape:')
+            print(f'sv1: {sv1}')
+            print(f'sv2: {sv2}')
+            arr = streams.wrap_get_blowing_bc_slot_velocity(sv1, sv2)
+            self.bc_velocity = arr.reshape((sv1, sv2))
 
     def set_amplitude(self, amplitude: float):
         # WARNING: copying to GPU and copying to CPU must happen on ALL mpi procs
