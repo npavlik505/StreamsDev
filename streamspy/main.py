@@ -210,6 +210,7 @@ for i in range(config.temporal.num_iter):
         import libstreams as streams
         #importlib.reload(streams)
         #streams.wrap_startmpi()
+        streams.wrap_deallocate_all()
         setup_solver()
 
 #
