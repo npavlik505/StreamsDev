@@ -49,23 +49,16 @@ class JetActuator():
         self.config = config
 
         vertex_x = (slot_start + slot_end) / 2
-        print(f'vertex_x is {vertex_x}')
         self.factory = PolynomialFactory(vertex_x, slot_start, slot_end)
 
         self.local_slot_start_x = int(streams.wrap_get_x_start_slot())
-        print(f'local slot start x is {self.local_slot_start_x}')
         self.local_slot_nx = int(streams.wrap_get_nx_slot())
-        print(f'local slot nx is {self.local_slot_nx}')
         self.local_slot_nz = streams.wrap_get_nz_slot()
-        print(f'local slot nz is {self.local_slot_nz}')
 
         self.has_slot = self.local_slot_start_x != -1
 
         if self.has_slot:
             sv1, sv2 = streams.wrap_get_blowing_bc_slot_velocity_shape()
-            print('Slot Velocity shape:')
-            print(f'sv1: {sv1}')
-            print(f'sv2: {sv2}')
             arr = streams.wrap_get_blowing_bc_slot_velocity(sv1, sv2)
             self.bc_velocity = arr.reshape((sv1, sv2))
 
@@ -96,7 +89,7 @@ class JetActuator():
 class AbstractActuator(ABC):
     @abstractmethod
     # returns the amplitude of the jet that was used
-    def step_actuator(self, time: float) -> float:
+    def step_actuator(self, time: float, i:int) -> float:
         pass
 
 class NoActuation(AbstractActuator):
@@ -105,7 +98,7 @@ class NoActuation(AbstractActuator):
         pass
 
     # returns the amplitude of the jet that was used
-    def step_actuator(self, _:float) -> float:
+    def step_actuator(self, _:float, i:int) -> float:
         return 0.
 
 class ConstantActuator(AbstractActuator):
@@ -119,13 +112,13 @@ class ConstantActuator(AbstractActuator):
         self.actuator = JetActuator(rank, config, slot_start, slot_end)
 
     # returns the amplitude of the jet that was used
-    def step_actuator(self, _: float) -> float:
+    def step_actuator(self, _: float, i:int) -> float:
         self.actuator.set_amplitude(self.amplitude)
         return self.amplitude
 
 class SinusoidalActuator(AbstractActuator):
     def __init__(self, amplitude: float, slot_start: int, slot_end: int, rank: int, config: Config, angular_frequency:float ):
-        utils.hprint("initializing a constant velocity actuator")
+        utils.hprint("initializing a sinusoidal velocity actuator")
 
         self.slot_start = slot_start
         self.slot_end = slot_end
@@ -135,12 +128,72 @@ class SinusoidalActuator(AbstractActuator):
         self.angular_frequency = angular_frequency
 
     # returns the amplitude of the jet that was used
-    def step_actuator(self, time: float) -> float:
+    def step_actuator(self, time: float, i:int) -> float:
         adjusted_amplitude = math.sin(self.angular_frequency * time)
 
         self.actuator.set_amplitude(adjusted_amplitude)
 
         return adjusted_amplitude
+
+class DMDcActuator(AbstractActuator):
+    def __init__(self, amplitude: float, slot_start: int, slot_end: int, rank: int, config: Config):
+        utils.hprint("initializing a constant DMDc actuator")
+
+        self.slot_start = slot_start
+        self.slot_end = slot_end
+        self.amplitude = amplitude
+        self.config = config
+        self.actuator = JetActuator(rank, config, slot_start, slot_end)
+
+    # returns the amplitude of the jet that was used
+    def step_actuator(self, time: float, i:int) -> float:
+        n_steps = self.config.temporal.num_iter
+        frac = i / n_steps
+        
+        # 1) PRBS (± amplitude) for the first 30%
+        if frac <= .3:
+            print(f'[DEBUG: jet_actuator.py] PRBS running {i}')
+            adjusted_amplitude = self.amplitude * (2*np.random.rand() - 1)
+            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
+            
+        # 2) Linear‐chirp sine over next 30%
+        elif frac <= .6:
+            print(f'[DEBUG: jet_actuator.py] Linear-chirp sine running {i}')
+            # total time span
+            dt = (self.config.temporal.fixed_dt
+                  if self.config.temporal.fixed_dt is not None
+                  else streams.wrap_get_dtglobal())
+            T  = n_steps * dt
+
+            # phase(t) = 2π (t/T)^2  → instantaneous freq ∝ t/T
+            phase = 2 * math.pi * (time / T)**2
+            adjusted_amplitude = self.amplitude * math.sin(phase)
+            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
+
+        elif frac <= .7:
+            print(f'[DEBUG: jet_actuator.py] .2 amp running {i}')
+            adjusted_amplitude = 0.2 * self.amplitude
+            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
+
+        elif frac <= .8:
+            print(f'[DEBUG: jet_actuator.py] .5 amp running {i}')
+            adjusted_amplitude = 0.5 * self.amplitude
+            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
+
+        elif frac <= .9:
+            print(f'[DEBUG: jet_actuator.py] .8 running {i}')
+            adjusted_amplitude = 0.8 * self.amplitude
+            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
+
+        else:
+            print(f'[DEBUG: jet_actuator.py] 100% amp running {i}')
+            adjusted_amplitude = 1.0 * self.amplitude
+            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
+
+        self.actuator.set_amplitude(adjusted_amplitude)
+
+        return adjusted_amplitude
+
 
 def init_actuator(rank: int, config: Config) -> AbstractActuator:
     jet_config = config.jet
@@ -166,6 +219,15 @@ def init_actuator(rank: int, config: Config) -> AbstractActuator:
         angular_frequency = jet_config.extra_json["angular_frequency"]
 
         return SinusoidalActuator(amplitude, slot_start, slot_end, rank, config, angular_frequency);
+    elif jet_config.jet_method == JetMethod.DMDc:
+        print(jet_config.extra_json)
+        # these should be guaranteed to exist in the additional json information
+        # so we can essentially ignore the errors that we have here
+        slot_start = jet_config.extra_json["slot_start"]
+        slot_end = jet_config.extra_json["slot_end"]
+        amplitude = jet_config.extra_json["amplitude"]
+
+        return DMDcActuator(amplitude, slot_start, slot_end, rank, config);
     elif jet_config.jet_method == JetMethod.adaptive:
         exit()
     else:

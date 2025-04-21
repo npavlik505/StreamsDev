@@ -27,7 +27,7 @@ class Grid():
         self.ly_wr = ly_wr 
 
         self.dy_w = dy_w
-        self.jb_gri = jb_grid
+        self.jb_grid = jb_grid
 
         self.ng = ng
 
@@ -115,6 +115,7 @@ class JetMethod(Enum):
     none = "None"
     constant = "Constant"
     sinusoidal = "Sinusoidal"
+    DMDc = "DMDc"
     adaptive = "Adaptive"
 
 class Jet():

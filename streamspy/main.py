@@ -58,27 +58,14 @@ energy_array = np.zeros(1)
 #
 
 def setup_solver():
-    print("The wrap_setup() function is now running")
     streams.wrap_setup()
-    print("The wrap_setup() function has now finished")
-    print(">>> After wrap_setup: nx_slot =", streams.wrap_get_nx_slot())
-    print("The wrap_init_solver() function is now running")
     streams.wrap_init_solver()
-    print("The wrap_init_solver() function has now finished")
-    print(">>> After wrap_init_solver: nx_slot =", streams.wrap_get_nx_slot())
 
 setup_solver()
 
-w1, w2, w3, w4 = streams.wrap_get_w_shape()
-print('W shape (conservative vector):')
-print(f'n1: {w1}')
-print(f'n2: {w2}')
-print(f'n3: {w3}')
-print(f'n4: {w4}')
-
-tauwx = streams.wrap_get_tauw_x_shape()
-print(f'tauwx: {tauwx}') 
-
+# Collect shape of mod_steams variables to later pass in to wrapped mod_streams data-retrieval functions
+w1, w2, w3, w4 = streams.wrap_get_w_shape() # conservative vector (rho, rho-u, rho-v, rho-w, E)
+tauwx = streams.wrap_get_tauw_x_shape() # equal to the x dimension
 
 #
 # Initialize datasets and HDF5 output files
@@ -118,19 +105,12 @@ x_mesh_dset = io_utils.Scalar1DX(mesh_h5, [config.grid.nx], 1, "x_grid", rank)
 y_mesh_dset = io_utils.Scalar1D(mesh_h5, [config.grid.ny], 1, "y_grid", rank)
 z_mesh_dset = io_utils.Scalar1D(mesh_h5, [config.grid.nz], 1, "z_grid", rank)
 
-
-
-# Since mod_streams definitions must individually wrapped. Below is "mod_streams workaround 1"
-# x_mesh = streams.mod_streams.x[config.x_start():config.x_end()]
-# y_mesh = streams.mod_streams.y[config.y_start():config.y_end()]
-# z_mesh = streams.mod_streams.z[config.z_start():config.z_end()]
-
-
-x_mesh = streams.wrap_get_x(config.x_start(), config.x_end())
-print(f'x_mesh values: {x_mesh}')
+#
+# Generate Mesh (includes ghost nodes)
+#
+x_mesh = streams.wrap_get_x(config.x_start(), config.x_end()) 
 y_mesh = streams.wrap_get_y(config.y_start(), config.y_end())
 z_mesh = streams.wrap_get_z(config.z_start(), config.z_end())
-# End of "mod_streams workaround 1"
 
 x_mesh_dset.write_array(x_mesh)
 y_mesh_dset.write_array(y_mesh)
@@ -139,19 +119,16 @@ z_mesh_dset.write_array(z_mesh)
 #
 # Main solver loop, we start time stepping until we are done
 #
-print(">>> Before actuator init: nx_slot =", streams.wrap_get_nx_slot())
-
 actuator = jet_actuator.init_actuator(rank, config)
 
 time = 0
 for i in range(config.temporal.num_iter):
 
-    amplitude = actuator.step_actuator(time)
+    amplitude = actuator.step_actuator(time, i)
 
     streams.wrap_step_solver()
 
     time += streams.wrap_get_dtglobal()
-    print(f'wrap_get_dtglobal value: {time}')
     time_array[:] = time
 
     if (i % config.temporal.span_average_io_steps) == 0:
@@ -174,7 +151,7 @@ for i in range(config.temporal.num_iter):
         # dr = streams.wrap_get_dissipation_rate_shape()
         dissipation_rate_array[:] = streams.wrap_get_dissipation_rate()
         dissipation_rate_dset.write_array(dissipation_rate_array)
-        utils.hprint(f"dissipation is {dissipation_rate_array[0]}")
+        # utils.hprint(f"dissipation is {dissipation_rate_array[0]}")
 
         # calculate energy on GPU and store the result
         streams.wrap_energy_calculation()
@@ -182,7 +159,7 @@ for i in range(config.temporal.num_iter):
         energy_array[:] = streams.wrap_get_energy()
         energy_dset.write_array(energy_array)
 
-        utils.hprint(f"energy is {energy_array[0]}")
+        # utils.hprint(f"energy is {energy_array[0]}")
 
     # save dt information for every step
     dt_array[:] = streams.wrap_get_dtglobal()
@@ -202,16 +179,16 @@ for i in range(config.temporal.num_iter):
             flowfield_time_dset.write_array(time_array)
 
 
-    if i == 5:
-        print("reloading python module")
-        streams.wrap_finalize_solver()
-        #streams.wrap_finalize()
-        del streams
-        import libstreams as streams
-        #importlib.reload(streams)
-        #streams.wrap_startmpi()
-        streams.wrap_deallocate_all()
-        setup_solver()
+    #if i == 5:
+        #print("reloading python module")
+        #streams.wrap_finalize_solver()
+        ##streams.wrap_finalize()
+        #del streams
+        #import libstreams as streams
+        ##importlib.reload(streams)
+        ##streams.wrap_startmpi()
+        #streams.wrap_deallocate_all()
+        #setup_solver()
 
 #
 # wrap up execution of solver

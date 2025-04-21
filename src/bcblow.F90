@@ -163,9 +163,6 @@ subroutine local_slot_locations()
         ! we are forcing, but 3-1 = 2, hence the +1
         nx_slot = slot_end_local - x_start_slot + 1
         x_end_slot = slot_end_local
-	print *, ">>> [bcblow] x_start_slot =", x_start_slot
-	print *, ">>> [bcblow] x_end_slot   =", x_end_slot
-	print *, ">>> [bcblow] nx_slot      =", nx_slot
 
         nz_slot = nz
     else

@@ -127,10 +127,4 @@ subroutine readinp
   tsol_restart(l) = l*dtsave_restart
  enddo
 !
-print *, ">>> [readinp] force_sbli_blowing_bc =", force_sbli_blowing_bc
-print *, ">>> [readinp] slot_start_x_global =", slot_start_x_global
-print *, ">>> [readinp] slot_end_x_global   =", slot_end_x_global
-print *, ">>> [readinp] iflow               =", iflow
-print *, ">>> [readinp] ibc(3)              =", ibc(3)
-!
 end subroutine readinp
