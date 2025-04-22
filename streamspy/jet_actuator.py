@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict
 import utils
 import math
+from mpi4py import MPI
 
 # the equation of the polynomial for the jet actuation in coordinates local to the jet
 # actuator. This means that the jet actuator starts at x = 0 and ends at x = slot_end
@@ -145,53 +146,54 @@ class DMDcActuator(AbstractActuator):
         self.config = config
         self.actuator = JetActuator(rank, config, slot_start, slot_end)
 
-    # returns the amplitude of the jet that was used
-    def step_actuator(self, time: float, i:int) -> float:
+        # MPI setup
+        self.comm = MPI.COMM_WORLD
+        self.root = 0
+        self.rank = rank # should match comm.Get_rank()
+
+    def step_actuator(self, time: float, i: int) -> float:
         n_steps = self.config.temporal.num_iter
-        frac = i / n_steps
-        
-        # 1) PRBS (± amplitude) for the first 30%
-        if frac <= .3:
-            print(f'[DEBUG: jet_actuator.py] PRBS running {i}')
-            adjusted_amplitude = self.amplitude * (2*np.random.rand() - 1)
-            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
-            
-        # 2) Linear‐chirp sine over next 30%
-        elif frac <= .6:
-            print(f'[DEBUG: jet_actuator.py] Linear-chirp sine running {i}')
-            # total time span
-            dt = (self.config.temporal.fixed_dt
-                  if self.config.temporal.fixed_dt is not None
-                  else streams.wrap_get_dtglobal())
-            T  = n_steps * dt
+        frac    = i / n_steps
 
-            # phase(t) = 2π (t/T)^2  → instantaneous freq ∝ t/T
-            phase = 2 * math.pi * (time / T)**2
-            adjusted_amplitude = self.amplitude * math.sin(phase)
-            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
-
-        elif frac <= .7:
-            print(f'[DEBUG: jet_actuator.py] .2 amp running {i}')
-            adjusted_amplitude = 0.2 * self.amplitude
-            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
-
-        elif frac <= .8:
-            print(f'[DEBUG: jet_actuator.py] .5 amp running {i}')
-            adjusted_amplitude = 0.5 * self.amplitude
-            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
-
-        elif frac <= .9:
-            print(f'[DEBUG: jet_actuator.py] .8 running {i}')
-            adjusted_amplitude = 0.8 * self.amplitude
-            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
-
+        # only root computes the “raw” adjusted_amplitude
+        if self.rank == self.root:
+            if frac <= .3:
+                print(f'[DEBUG: jet_actuator.py] PRBS running {i}')
+                raw = self.amplitude * (2*np.random.rand() - 1)
+                print(f'[DEBUG: jet_actuator.py] amplitude {raw}')
+            elif frac <= .6:
+                print(f'[DEBUG: jet_actuator.py] Linear-chirp sine running {i}')
+                dt    = (self.config.temporal.fixed_dt
+                         if self.config.temporal.fixed_dt is not None
+                         else streams.wrap_get_dtglobal())
+                T     = n_steps * dt
+                phase = 2 * math.pi * (time / T)**2
+                raw   = self.amplitude * math.sin(phase)
+                print(f'[DEBUG: jet_actuator.py] amplitude {raw}')
+            elif frac <= .7:
+                print(f'[DEBUG: jet_actuator.py] .2 amp running {i}')
+                raw = 0.2 * self.amplitude
+                print(f'[DEBUG: jet_actuator.py] amplitude {raw}')
+            elif frac <= .8:
+                print(f'[DEBUG: jet_actuator.py] .5 amp running {i}')
+                raw = 0.5 * self.amplitude
+                print(f'[DEBUG: jet_actuator.py] amplitude {raw}')
+            elif frac <= .9:
+                print(f'[DEBUG: jet_actuator.py] .8 running {i}')
+                raw = 0.8 * self.amplitude
+                print(f'[DEBUG: jet_actuator.py] amplitude {raw}')
+            else:
+                print(f'[DEBUG: jet_actuator.py] 100% amp running {i}')
+                raw = 1.0 * self.amplitude
+                print(f'[DEBUG: jet_actuator.py] amplitude {raw}')
         else:
-            print(f'[DEBUG: jet_actuator.py] 100% amp running {i}')
-            adjusted_amplitude = 1.0 * self.amplitude
-            print(f'[DEBUG: jet_actuator.py] amplitude {adjusted_amplitude}')
+            raw = None
 
+        # broadcast the single value from root → everyone
+        adjusted_amplitude = self.comm.bcast(raw, root=self.root)
+
+        # now every rank sets the same amplitude
         self.actuator.set_amplitude(adjusted_amplitude)
-
         return adjusted_amplitude
 
 
