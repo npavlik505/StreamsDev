@@ -65,7 +65,10 @@ setup_solver()
 
 # Collect shape of mod_steams variables to later pass in to wrapped mod_streams data-retrieval functions
 w1, w2, w3, w4 = streams.wrap_get_w_shape() # conservative vector (rho, rho-u, rho-v, rho-w, E)
+print(f'w1, w2, w3, w4: {w1, w2, w3, w4}')
 tauwx = streams.wrap_get_tauw_x_shape() # equal to the x dimension
+print(f'tauwx: {tauwx}')
+
 
 #
 # Initialize datasets and HDF5 output files

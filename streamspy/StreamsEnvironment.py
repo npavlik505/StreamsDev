@@ -1,0 +1,275 @@
+# streams_gym_env.py
+
+# Gym and standard imports
+import os
+import sys
+import json
+import math
+import numpy as np
+import gym
+from gym import spaces
+
+# __file__ is the path to this file(StreamsEnvironment.py) and os.path.dirname(__file__) returns the path to the directory where the file exists.
+# os.pardir is the string literal ".." therefore pointing to the parent directory
+# os.path.abspath(os.path.join()) assigns the absolute path to the directory above streamspy (i.e. streams) to PROJECT_ROOT
+# Therefore, if it is not currently on the Python Path the diretory is added to it
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+# script, mpi, and globals imports 
+import libstreams as streams # f2py‐wrapped STREAmS library
+
+# Gym Environment: Initialization
+class StreamsGymEnv(gym.Env):
+    """
+    OpenAI Gym environment wrapping the STREAmS solver via f2py.
+
+    Observation: the 1D wall‐shear‐stress array τw(x) (length = config.grid.nx)
+    Action:      a single "jet amplitude" scalar ∈ [ -max_amplitude, +max_amplitude ]
+
+    Reward:      Negative squared‐L2 norm of τw(x)  (i.e. agent tries to minimize shear stress)
+    Done:        When `self.step_count >= self.max_episode_steps`.
+
+    To use:
+        env = StreamsGymEnv(config_path="/input/input.json", max_amplitude=1.0, max_episode_steps=200)
+        obs = env.reset()
+        for _ in range(max_episode_steps):
+            action = env.action_space.sample()
+            obs, reward, done, info = env.step(action)
+            if done:
+                break
+    """
+    metadata = {'render.modes': []}
+
+    def __init__(self):
+        super().__init__()
+
+        # Start MPI, initialize global variables and import the scripts that rely on the global variables
+        streams.wrap_startmpi()
+        from mpi4py import MPI # solver MPI must be started (wrap_startmpi()) before mpi4py library import
+        import globals # contains rank/comm initialization
+        globals.init() # 
+        self.rank = globals.rank
+        self.comm = globals.comm
+        import io_utils # for HDF5
+        from config import Config # input.json to Config object
+        import utils # helper code; calculate_span_averages, etc.
+        import jet_actuator # all actuator code
+        self.jet_actuator = jet_actuator # bind to self so that it may be used in step method 
+
+        # Parse, and later access the entries of, input.json using config
+        with open("/input/input.json", "r") as f:
+            cfg_json = json.load(f)
+            self.config = Config.from_json(cfg_json)
+
+        # Allocate Arrays
+        span_average = np.zeros([5, self.config.nx_mpi(), self.config.ny_mpi()], dtype=np.float64)
+        temp_field = np.zeros((self.config.nx_mpi(), self.config.ny_mpi(), self.config.nz_mpi()), dtype=np.float64)
+        dt_array = np.zeros(1)
+        amplitude_array = np.zeros(1)
+        time_array = np.zeros(1)
+        dissipation_rate_array = np.zeros(1)
+        energy_array = np.zeros(1)
+
+        # Execute STREAmS setup routines (wrap_setup and wrap_init_solver)
+        self._setup_solver()
+
+        # Get shapes to pass into Fortran getter functions
+        self.tauw_shape = streams.wrap_get_tauw_x_shape() # streams.wrap_get_tauw_x_shape() returns an integer = # of x‐point, therefore should equal config.grid.nx
+        w1, w2, w3, w4  = streams.wrap_get_w_shape() # conservative vector (rho, rho-u, rho-v, rho-w, E)
+        self.w_shape   = (w1, w2, w3, w4)
+        
+        # Define the observation_space as config.grid.nx, the number of grid points in the x (streamwise) direction
+        self.nx = self.config.grid.nx
+
+        # Initialize datasets and HDF5 output files
+        self.flowfields = io_utils.IoFile("/distribute_save/flowfields.h5")
+        self.span_averages = io_utils.IoFile("/distribute_save/span_averages.h5")
+        self.trajectories = io_utils.IoFile("/distribute_save/trajectories.h5")
+        self.mesh_h5 = io_utils.IoFile("/distribute_save/mesh.h5")
+
+        grid_shape = [self.config.grid.nx, self.config.grid.ny, self.config.grid.nz]
+        span_average_shape = [self.config.grid.nx, self.config.grid.ny]
+
+        # 3D flowfield files
+        if not (self.config.temporal.full_flowfield_io_steps is None):
+            flowfield_writes = int(math.ceil(self.config.temporal.num_iter / self.config.temporal.full_flowfield_io_steps))
+        else:
+            flowfield_writes = 0
+        self.velocity_dset = io_utils.VectorField3D(self.flowfields, [5, *grid_shape], flowfield_writes, "velocity", self.rank)
+        self.flowfield_time_dset = io_utils.Scalar1D(self.flowfields, [1], flowfield_writes, "time", self.rank)
+
+        # span average files
+        numwrites = int(math.ceil(self.config.temporal.num_iter / self.config.temporal.span_average_io_steps))
+
+        # this is rho, u, v, w, E (already normalized from the rho u, rho v... values from streams)
+        self.span_average_dset = io_utils.VectorFieldXY2D(self.span_averages, [5, * span_average_shape], numwrites, "span_average", self.rank)
+        self.shear_stress_dset = io_utils.ScalarFieldX1D(self.span_averages, [self.config.grid.nx], numwrites, "shear_stress", self.rank)
+        self.span_average_time_dset = io_utils.Scalar0D(self.span_averages, [1], numwrites, "time", self.rank)
+        self.dissipation_rate_dset = io_utils.Scalar0D(self.span_averages, [1], numwrites, "dissipation_rate", self.rank)
+        self.energy_dset = io_utils.Scalar0D(self.span_averages, [1], numwrites, "energy", self.rank)
+
+        # trajectories files
+        self.dt_dset = io_utils.Scalar0D(self.trajectories, [1], self.config.temporal.num_iter, "dt", self.rank)
+        self.amplitude_dset = io_utils.Scalar0D(self.trajectories, [1], self.config.temporal.num_iter, "jet_amplitude", self.rank)
+
+        # mesh datasets
+        x_mesh_dset = io_utils.Scalar1DX(self.mesh_h5, [self.config.grid.nx], 1, "x_grid", self.rank)
+        y_mesh_dset = io_utils.Scalar1D(self.mesh_h5, [self.config.grid.ny], 1, "y_grid", self.rank)
+        z_mesh_dset = io_utils.Scalar1D(self.mesh_h5, [self.config.grid.nz], 1, "z_grid", self.rank)
+
+        # Generate Mesh (includes ghost nodes)
+        x_mesh = streams.wrap_get_x(self.config.x_start(), self.config.x_end()) 
+        y_mesh = streams.wrap_get_y(self.config.y_start(), self.config.y_end())
+        z_mesh = streams.wrap_get_z(self.config.z_start(), self.config.z_end())
+
+        x_mesh_dset.write_array(x_mesh)
+        y_mesh_dset.write_array(y_mesh)
+        z_mesh_dset.write_array(z_mesh)
+
+
+        # Initialize actuator
+        self.actuator = jet_actuator.init_actuator(self.rank, self.config)
+
+
+        # Observation Space (Determine what resonable bounds are)
+        # Observation = τw(x) ∈ R^{nx}.  We bound it loosely between [-100, +100] per point.
+        high_obs = np.full((self.nx,), 100.0, dtype=np.float32)
+        self.observation_space = spaces.Box(low=-high_obs,
+                                            high=+high_obs,
+                                            shape=(self.nx,),
+                                            dtype=np.float32)
+
+        # Action Space (Bounds determined from input.json, extracted upon actuator initialization above)
+        # Action = single continuous amplitude ∈ [ -max_amplitude, +max_amplitude ]
+        self.max_amplitude = float(self.actuator.amplitude)
+        self.action_space = spaces.Box(low=np.array([-self.max_amplitude], dtype=np.float32),
+                                       high=np.array([+self.max_amplitude], dtype=np.float32),
+                                       shape=(1,),
+                                       dtype=np.float32)
+
+        # Step counting and time
+        self.step_count = 0
+        self.max_episode_steps = int(self.config.temporal.num_iter)
+        self.current_time = 0.0
+
+        # Tau storage, overwritten each step
+        self._tauw_buffer = np.zeros((self.tauw_shape,), dtype=np.float64)
+
+    # setup_solver definition: initialized solver on first call, closes solver and reinits on subsequent calls
+    def _setup_solver(self):
+        """
+        Calls `wrap_setup()` and `wrap_init_solver()` exactly once.  If the solver has already 
+        been initialized, we finalize and restart it.
+        """
+        try:
+            # if streams.wrap_finalize_solver() fails (because it's never been set up), we ignore
+            streams.wrap_finalize_solver()
+            streams.wrap_finalize()
+        except Exception:
+            pass
+
+        # Reinit and restart the count
+        streams.wrap_setup()
+        streams.wrap_init_solver()
+        self.current_time = 0.0
+        self.step_count = 0
+
+    # Gym Environment: Restart
+    def reset(self, *, seed=None, options=None):
+        """
+        Re‐initializes the STREAmS solver to a 'cold start' (no previous steps taken),
+        then returns the initial τw(x) as the observation.
+        """
+
+        super().reset(seed=seed) # seeding not currently used, but kept for future use
+
+        self._setup_solver() # End previous solver and rebuild it
+
+        self.actuator = self.jet_actuator.init_actuator(self.rank, self.config) # Re‐build actuator
+
+        # Immediately compute tau on the new solver (no time steps taken yet)
+        streams.wrap_copy_gpu_to_cpu() # bring everything from GPU to CPU
+        streams.wrap_tauw_calculate() # ask Fortran to compute τau(x) on the CPU
+        tau = streams.wrap_get_tauw_x(self.tauw_shape)
+        self._tauw_buffer[:] = tau  # temporary tau storage
+
+        # Reset counters
+        self.step_count = 0
+        self.current_time = 0.0
+
+        # Gym expects a float32 array
+        return self._tauw_buffer.astype(np.float32)
+
+    # Gym Environment: Step
+    def step(self, action):
+        """
+        Given `action` = np.ndarray of shape (1,), pass it to the JetActuator,
+        advance the solver one time step, recompute tau, and return (obs, reward, done, info).
+        """
+        # apply action (assign the amplitude calculated by RL to amp)
+        amp = float(np.asarray(action).reshape(-1)[0])
+
+        # step actuator
+        used_amp = self.actuator.step_actuator(self.current_time, self.step_count, amp)
+
+        # redefine amp for later storage
+        amp = float(used_amp)
+
+        # step solver
+        streams.wrap_step_solver()
+
+        # Update time
+        dt = float(streams.wrap_get_dtglobal())
+        self.current_time += dt
+
+        # copy gpu to cpu and calculate tau
+        streams.wrap_copy_gpu_to_cpu()
+        streams.wrap_tauw_calculate()
+        tau = streams.wrap_get_tauw_x(self.tauw_shape)    # returns a NumPy array of length nx
+        self._tauw_buffer[:] = tau
+
+        # Reward: Negative L2 Norm of tau (agent tries to drive shear stress to 0)
+        reward = - float(np.sum(self._tauw_buffer**2))
+
+        # Termination: After `max_episode_steps` steps, done=True
+        self.step_count += 1
+        done = (self.step_count >= self.max_episode_steps)
+
+        # Required Gym Stats:  (obs, reward, done, info)
+        obs = self._tauw_buffer.astype(np.float32)
+        info = {
+            "time": self.current_time,
+            "step": self.step_count,
+            "jet_amplitude": amp
+        }
+        return obs, reward, done, info
+
+    def close(self):
+        """
+        Cleanly finalize the solver before shutting down.
+        """
+        try:
+            streams.wrap_finalize_solver()
+            streams.wrap_finalize()
+        except Exception:
+            pass
+
+
+#────────────────────────────────────────────────────────────────────────────────
+# If you want to test the environment quickly from the command line,
+# you can do something like:
+#
+#   if __name__ == "__main__":
+#       env = StreamsGymEnv(config_path="/input/input.json", max_amplitude=1.0, max_episode_steps=200)
+#       obs = env.reset()
+#       for _ in range(200):
+#           a = env.action_space.sample()
+#           o, r, d, info = env.step(a)
+#           print(f"step={info['step']}, time={info['time']:.4f}, reward={r:.3e}")
+#           if d:
+#               break
+#       env.close()
+#────────────────────────────────────────────────────────────────────────────────
+

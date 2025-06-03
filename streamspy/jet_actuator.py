@@ -90,7 +90,7 @@ class JetActuator():
 class AbstractActuator(ABC):
     @abstractmethod
     # returns the amplitude of the jet that was used
-    def step_actuator(self, time: float, i:int) -> float:
+    def step_actuator(self, time: float, i:int, agent_amplitude: float = None) -> float:
         pass
 
 class NoActuation(AbstractActuator):
@@ -99,7 +99,7 @@ class NoActuation(AbstractActuator):
         pass
 
     # returns the amplitude of the jet that was used
-    def step_actuator(self, _:float, i:int) -> float:
+    def step_actuator(self, _:float, i:int, agent_amplitude: float = None) -> float:
         return 0.
 
 class ConstantActuator(AbstractActuator):
@@ -113,7 +113,7 @@ class ConstantActuator(AbstractActuator):
         self.actuator = JetActuator(rank, config, slot_start, slot_end)
 
     # returns the amplitude of the jet that was used
-    def step_actuator(self, _: float, i:int) -> float:
+    def step_actuator(self, _: float, i:int, agent_amplitude: float = None) -> float:
         self.actuator.set_amplitude(self.amplitude)
         return self.amplitude
 
@@ -129,11 +129,9 @@ class SinusoidalActuator(AbstractActuator):
         self.angular_frequency = angular_frequency
 
     # returns the amplitude of the jet that was used
-    def step_actuator(self, time: float, i:int) -> float:
+    def step_actuator(self, time: float, i:int, agent_amplitude: float = None) -> float:
         adjusted_amplitude = math.sin(self.angular_frequency * time)
-
         self.actuator.set_amplitude(adjusted_amplitude)
-
         return adjusted_amplitude
 
 class DMDcActuator(AbstractActuator):
@@ -151,7 +149,7 @@ class DMDcActuator(AbstractActuator):
         self.root = 0
         self.rank = rank # should match comm.Get_rank()
 
-    def step_actuator(self, time: float, i: int) -> float:
+    def step_actuator(self, time: float, i: int, agent_amplitude: float = None) -> float:
         n_steps = self.config.temporal.num_iter
         frac    = i / n_steps
 
@@ -196,6 +194,20 @@ class DMDcActuator(AbstractActuator):
         self.actuator.set_amplitude(adjusted_amplitude)
         return adjusted_amplitude
 
+class AdaptiveActuator(AbstractActuator):
+    def __init__(self, amplitude: float, slot_start: int, slot_end: int, rank: int, config: Config):
+        utils.hprint("initializing a constant velocity actuator")
+
+        self.slot_start = slot_start
+        self.slot_end = slot_end
+        self.amplitude = amplitude
+
+        self.actuator = JetActuator(rank, config, slot_start, slot_end)
+
+    # returns the amplitude of the jet that was used
+    def step_actuator(self, time: float, i: int, agent_amplitude: float = None) -> float:
+        self.actuator.set_amplitude(agent_amplitude)
+        return adaptive_amplitude
 
 def init_actuator(rank: int, config: Config) -> AbstractActuator:
     jet_config = config.jet
@@ -231,6 +243,14 @@ def init_actuator(rank: int, config: Config) -> AbstractActuator:
 
         return DMDcActuator(amplitude, slot_start, slot_end, rank, config);
     elif jet_config.jet_method == JetMethod.adaptive:
-        exit()
+        print(jet_config.extra_json)
+        # these should be guaranteed to exist in the additional json information
+        # so we can essentially ignore the errors that we have here
+        slot_start = jet_config.extra_json["slot_start"]
+        slot_end = jet_config.extra_json["slot_end"]
+        amplitude = jet_config.extra_json["amplitude"]
+
+        return AdaptiveActuator(amplitude, slot_start, slot_end, rank, config);
+        
     else:
         exit()
