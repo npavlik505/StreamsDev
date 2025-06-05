@@ -207,7 +207,7 @@ class AdaptiveActuator(AbstractActuator):
     # returns the amplitude of the jet that was used
     def step_actuator(self, time: float, i: int, agent_amplitude: float = None) -> float:
         self.actuator.set_amplitude(agent_amplitude)
-        return adaptive_amplitude
+        return agent_amplitude
 
 def init_actuator(rank: int, config: Config) -> AbstractActuator:
     jet_config = config.jet
