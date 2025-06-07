@@ -6,8 +6,8 @@ import sys
 import json
 import math
 import numpy as np
-import gym
-from gym import spaces
+import gymnasium
+from gymnasium import spaces
 
 # __file__ is the path to this file(StreamsEnvironment.py) and os.path.dirname(__file__) returns the path to the directory where the file exists.
 # os.pardir is the string literal ".." therefore pointing to the parent directory
@@ -21,7 +21,7 @@ if PROJECT_ROOT not in sys.path:
 import libstreams as streams # f2py‐wrapped STREAmS library
 
 # Gym Environment: Initialization
-class StreamsGymEnv(gym.Env):
+class StreamsGymEnv(gymnasium.Env):
     """
     OpenAI Gym environment wrapping the STREAmS solver via f2py.
 

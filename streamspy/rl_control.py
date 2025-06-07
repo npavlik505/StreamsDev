@@ -1,23 +1,32 @@
 # General imports
+print("Congrats, made it to rl_control.py")
 import argparse # Used for attribute access, defining default values and data-type, and providing ready made help calls
 import json # collects values from input.json fields, converts them to a nested Python dictionary, which is then converted into a Config object (e.g. config.temporal.num_iter)
 import logging
+print("logging import")
 import os
+print("os import")
 import shutil
+print("shutil import")
 import signal
+print("signal import")
 from pathlib import Path
+print("pathlib import")
 from typing import Tuple
+print("typing.tuple import")
 import numpy as np
+print("np import")
 import torch
-from mpi4py import MPI
+print("torch import")
 from tqdm import trange
 
 # Script imports
-from .StreamsEnvironment import StreamsGymEnv
-from .DDPG import ddpg, ReplayBuffer
-from .config import Config, JetMethod
-from . import io_utils
+from StreamsEnvironment import StreamsGymEnv
+from DDPG import ddpg, ReplayBuffer
+from config import Config, JetMethod
+import io_utils
 
+print("Congrats, made it past the RL_imports")
 
 LOGGER = logging.getLogger(__name__)
 STOP = False
@@ -114,7 +123,7 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
     best_reward = -float("inf")
     best_path = Path(args.checkpoint_dir) / "best"
     episode_rewards = []
-
+    print("Just before trange use in train method")
     for ep in trange(args.train_episodes, disable=rank != 0):
         if STOP:
             break
