@@ -18,7 +18,10 @@ import numpy as np
 print("np import")
 import torch
 print("torch import")
-from tqdm import trange
+# from tqdm import trange (progress bar, could be a nice touch eventually)
+from mpi4py import rc
+rc.initialize = False
+from mpi4py import MPI
 
 # Script imports
 from StreamsEnvironment import StreamsGymEnv
@@ -54,13 +57,18 @@ def setup_logging() -> None:
 
 # Collects values from input.json, assigning them to python objects
 def copy_config(path: str) -> Config:
-    """Copy config to /input/input.json and return Config object."""
+    """Copy config to /input/input.json and return Config object.
+
+    If the source config is already located at ``/input/input.json`` the file is
+    read directly to avoid a ``SameFileError`` from ``shutil.copy2``.
+    """
     os.makedirs("/input", exist_ok=True) # Ensures input directory exists
-    shutil.copy2(path, "/input/input.json") # Copies in file in path (used for output/input.json) to /input/input.json
-    with open("/input/input.json", "r") as f: # Opens input.json, collects values within as a python dictionary, assigns them to Python objects
+    dst = "/input/input.json"
+    if os.path.abspath(path) != os.path.abspath(dst):
+        shutil.copy2(path, dst)  # Copies in file in path (used for output/input.json) to /input/input.json
+    with open(dst, "r") as f: # Opens input.json, collects values within as a python dictionary, assigns them to Python objects
         cfg = json.load(f)
     return Config.from_json(cfg)
-
 
 class ReplayBufferCustom(ReplayBuffer):
     """Replay buffer with configurable max size."""
@@ -123,8 +131,7 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
     best_reward = -float("inf")
     best_path = Path(args.checkpoint_dir) / "best"
     episode_rewards = []
-    print("Just before trange use in train method")
-    for ep in trange(args.train_episodes, disable=rank != 0):
+    for ep in range(args.train_episodes): #, disable=rank != 0):
         if STOP:
             break
         obs = env.reset()
@@ -174,7 +181,7 @@ def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoi
     if write_actions:
         h5 = io_utils.IoFile(args.eval_output)
         amp_dset = io_utils.Scalar1D(h5, [args.eval_max_steps], args.eval_episodes, "amplitude", rank)
-    for ep in trange(args.eval_episodes, disable=rank != 0):
+    for ep in range(args.eval_episodes): #, disable=rank != 0):
         obs = env.reset()
         done = False
         step = 0
@@ -246,25 +253,25 @@ if config.jet.jet_method != JetMethod.adaptive:
     LOGGER.error("JetMethod is not Adaptive. Exiting RL controller.")
     exit(1)
 
-    # Generate random number via torch. Not used now but present for future restart use.
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+# Generate random number via torch. Not used now but present for future restart use.
+torch.manual_seed(args.seed)
+np.random.seed(args.seed)
 
-    # Use GPU if available. Currently only used for open-loop control
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Use GPU if available. Currently only used for open-loop control
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    env = StreamsGymEnv() # Import Streams Gym Environment
-    state_dim = env.observation_space.shape[0] # Collect the state dimension (tau x, equal to x grid dim)
-    action_dim = env.action_space.shape[0] # Collect the action dimension (integer valued jet amplitude)
-    max_action = float(env.action_space.high[0]) # Specified in justfile
+env = StreamsGymEnv() # Import Streams Gym Environment
+state_dim = env.observation_space.shape[0] # Collect the state dimension (tau x, equal to x grid dim)
+action_dim = env.action_space.shape[0] # Collect the action dimension (integer valued jet amplitude)
+max_action = float(env.action_space.high[0]) # Specified in justfile
 
-    agent = ddpg(state_dim, action_dim, max_action) # instantiate the ddpg algorithm
-    agent.lr = args.learning_rate # RL parameters stored in args using argparse/json method above
-    agent.GAMMA = args.gamma
-    agent.TAU = args.tau
-    agent.actor_optimizer = torch.optim.Adam(agent.actor.parameters(), lr=agent.lr) #Initialize actor parameters
-    agent.critic_optimizer = torch.optim.Adam(agent.critic.parameters(), lr=agent.lr) #Initialize critc parameters
+agent = ddpg(state_dim, action_dim, max_action) # instantiate the ddpg algorithm
+agent.lr = args.learning_rate # RL parameters stored in args using argparse/json method above
+agent.GAMMA = args.gamma
+agent.TAU = args.tau
+agent.actor_optimizer = torch.optim.Adam(agent.actor.parameters(), lr=agent.lr) #Initialize actor parameters
+agent.critic_optimizer = torch.optim.Adam(agent.critic.parameters(), lr=agent.lr) #Initialize critc parameters
 
-    best_ckpt = train(env, agent, args) # Train the algorithm. Method above.
-    evaluate(env, agent, args, best_ckpt) # Evaluate the algorithm. Method Above.
+best_ckpt = train(env, agent, args) # Train the algorithm. Method above.
+evaluate(env, agent, args, best_ckpt) # Evaluate the algorithm. Method Above.
 

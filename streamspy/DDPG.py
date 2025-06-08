@@ -110,7 +110,7 @@ class ddpg(object):
     def initialize_networks(self):
         save_dir = f"{self.run_name}/Initial_Parameters"
         if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+            os.makedirs(save_dir, exist_ok=True)
 
         torch.save(self.actor.state_dict(), os.path.join(save_dir, 'InitialActorParameters.pt'))
         torch.save(self.actor_target.state_dict(), os.path.join(save_dir, 'InitialActorTargetParameters.pt'))

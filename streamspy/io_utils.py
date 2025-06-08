@@ -3,6 +3,8 @@
 # https://github.com/Fluid-Dynamics-Group/selective-modification/blob/763f1b6369a851b374bb918270ac8a80f72f5738/solver/io_utils.py
 #
 import h5py
+from mpi4py import rc
+rc.initialize = False
 from mpi4py import MPI
 import numpy as np
 from typing import Tuple, Optional, List, Any

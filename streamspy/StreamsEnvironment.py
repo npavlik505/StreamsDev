@@ -44,10 +44,11 @@ class StreamsGymEnv(gymnasium.Env):
 
     def __init__(self):
         super().__init__()
-
         # Start MPI, initialize global variables and import the scripts that rely on the global variables
         streams.wrap_startmpi()
-        from mpi4py import MPI # solver MPI must be started (wrap_startmpi()) before mpi4py library import
+        from mpi4py import rc
+        rc.initialize = False
+        from mpi4py import MPI  # solver MPI must be started (wrap_startmpi()) before mpi4py library import
         import globals # contains rank/comm initialization
         globals.init() # 
         self.rank = globals.rank
@@ -158,19 +159,49 @@ class StreamsGymEnv(gymnasium.Env):
         self._tauw_buffer = np.zeros((self.tauw_shape,), dtype=np.float64)
 
     # setup_solver definition: initialized solver on first call, closes solver and reinits on subsequent calls
-    def _setup_solver(self):
-        """
-        Calls `wrap_setup()` and `wrap_init_solver()` exactly once.  If the solver has already 
-        been initialized, we finalize and restart it.
-        """
-        try:
-            # if streams.wrap_finalize_solver() fails (because it's never been set up), we ignore
-            streams.wrap_finalize_solver()
-            streams.wrap_finalize()
-        except Exception:
-            pass
+    # def _setup_solver(self):
+    def _setup_solver(self, *, restart_mpi: bool = False) -> None:
+        """(Re)initialize the STREAmS solver.
 
-        # Reinit and restart the count
+        ``wrap_setup`` and ``wrap_init_solver`` must be called exactly once for a
+        running solver.  When resetting the environment we only finalize the
+        solver via ``wrap_finalize_solver`` while **keeping MPI alive**.  If a
+        full MPI shutdown is required, set ``restart_mpi=True`` to also call
+        ``wrap_finalize`` followed by ``wrap_startmpi`` before reinitializing the
+        solver.
+        """
+        # try:
+        #     # if streams.wrap_finalize_solver() fails (because it's never been set up), we ignore
+        #     streams.wrap_finalize_solver()
+        #     streams.wrap_finalize()
+        # except Exception:
+        #     pass
+
+        if restart_mpi:
+            # Finalize the solver and MPI stack completely.  This is normally
+            # only necessary when shutting down the environment or reloading the
+            # Python module.
+            try:
+                streams.wrap_finalize_solver()
+            except Exception:
+                pass
+            try:
+                streams.wrap_finalize()
+            except Exception:
+                pass
+            # When MPI is fully finalized we must start it again before
+            # continuing with solver setup.
+            streams.wrap_startmpi()
+        else:
+            # Standard environment reset: only tear down the solver while MPI
+            # remains active.  This avoids the cost and side effects of a full
+            # MPI finalize/startup cycle.
+            try:
+                streams.wrap_finalize_solver()
+            except Exception:
+                pass
+
+        # Reinitialize solver data structures.
         streams.wrap_setup()
         streams.wrap_init_solver()
         self.current_time = 0.0

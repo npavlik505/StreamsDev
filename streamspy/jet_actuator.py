@@ -5,6 +5,8 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict
 import utils
 import math
+from mpi4py import rc
+rc.initialize = False
 from mpi4py import MPI
 
 # the equation of the polynomial for the jet actuation in coordinates local to the jet

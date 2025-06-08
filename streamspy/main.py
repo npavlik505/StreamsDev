@@ -24,7 +24,8 @@ import libstreams as streams
 # initialize
 print("ATTRIBUTES IN libstreams:", dir(streams))
 streams.wrap_startmpi()
-
+from mpi4py import rc
+rc.initialize = False
 from mpi4py import MPI
 import json
 import math
