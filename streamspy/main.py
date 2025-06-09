@@ -22,7 +22,7 @@ import libstreams as streams
 # we have to start MPI here before importing the mpi4py library
 # otherwise, there will be an error in the streams code when they attempt to 
 # initialize
-print("ATTRIBUTES IN libstreams:", dir(streams))
+print("[main.py] ATTRIBUTES IN libstreams:", dir(streams))
 streams.wrap_startmpi()
 from mpi4py import rc
 rc.initialize = False
@@ -78,9 +78,9 @@ setup_solver()
 
 # Collect shape of mod_steams variables to later pass in to wrapped mod_streams data-retrieval functions
 w1, w2, w3, w4 = streams.wrap_get_w_shape() # conservative vector (rho, rho-u, rho-v, rho-w, E)
-print(f'w1, w2, w3, w4: {w1, w2, w3, w4}')
+print(f'[main.py] w1, w2, w3, w4: {w1, w2, w3, w4}')
 tauwx = streams.wrap_get_tauw_x_shape() # equal to the x dimension
-print(f'tauwx: {tauwx}')
+print(f'[main.py] tauwx: {tauwx}')
 
 
 #
@@ -148,7 +148,7 @@ for i in range(config.temporal.num_iter):
     time_array[:] = time
 
     if (i % config.temporal.span_average_io_steps) == 0:
-        utils.hprint("writing span average to output")
+        utils.hprint("[main.py] writing span average to output")
         streams.wrap_copy_gpu_to_cpu()
         streams_data_slice = config.slice_flowfield_array(streams.wrap_get_w(w1, w2, w3, w4))
         utils.calculate_span_averages(config, span_average, temp_field, streams_data_slice)
@@ -187,7 +187,7 @@ for i in range(config.temporal.num_iter):
 
     if not (config.temporal.full_flowfield_io_steps is None):
         if (i % config.temporal.full_flowfield_io_steps) == 0:
-            utils.hprint("writing flowfield")
+            utils.hprint("[main.py] writing flowfield")
             streams.wrap_copy_gpu_to_cpu()
             velocity_dset.write_array(config.slice_flowfield_array(streams.wrap_get_w(w1, w2, w3, w4)))
 
@@ -212,5 +212,5 @@ for i in range(config.temporal.num_iter):
 
 streams.wrap_finalize_solver()
 
-print("finalizing solver")
+print("[main.py] finalizing solver")
 streams.wrap_finalize()

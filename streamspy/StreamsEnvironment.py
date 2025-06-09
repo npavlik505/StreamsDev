@@ -76,8 +76,9 @@ class StreamsGymEnv(gymnasium.Env):
         # Execute STREAmS setup routines (wrap_setup and wrap_init_solver)
         self._setup_solver()
 
-        # Get shapes to pass into Fortran getter functions
-        self.tauw_shape = streams.wrap_get_tauw_x_shape() # streams.wrap_get_tauw_x_shape() returns an integer = # of x‐point, therefore should equal config.grid.nx
+        # ``tauw_shape`` is the number of wall points owned by this MPI rank.
+        # The global observation is assembled by gathering data from all ranks in `reset` and `step`.
+        self.tauw_shape = streams.wrap_get_tauw_x_shape()
         w1, w2, w3, w4  = streams.wrap_get_w_shape() # conservative vector (rho, rho-u, rho-v, rho-w, E)
         self.w_shape   = (w1, w2, w3, w4)
         
@@ -189,6 +190,10 @@ class StreamsGymEnv(gymnasium.Env):
                 streams.wrap_finalize()
             except Exception:
                 pass
+            try:
+                streams.wrap_deallocate_all()
+            except Exception:
+                pass
             # When MPI is fully finalized we must start it again before
             # continuing with solver setup.
             streams.wrap_startmpi()
@@ -198,6 +203,10 @@ class StreamsGymEnv(gymnasium.Env):
             # MPI finalize/startup cycle.
             try:
                 streams.wrap_finalize_solver()
+            except Exception:
+                pass
+            try:
+                streams.wrap_deallocate_all()
             except Exception:
                 pass
 
@@ -224,14 +233,23 @@ class StreamsGymEnv(gymnasium.Env):
         streams.wrap_copy_gpu_to_cpu() # bring everything from GPU to CPU
         streams.wrap_tauw_calculate() # ask Fortran to compute τau(x) on the CPU
         tau = streams.wrap_get_tauw_x(self.tauw_shape)
+        print(f'[StreamsEnvironment.py] tau shape from gym reset: {tau.shape}')
         self._tauw_buffer[:] = tau  # temporary tau storage
+        
+        # Gather τ_w from all MPI ranks and broadcast the concatenated array
+        all_tau = self.comm.gather(self._tauw_buffer, root=0)
+        if self.rank == 0:
+            tau_global = np.concatenate(all_tau)
+        else:
+            tau_global = None
+        tau_global = self.comm.bcast(tau_global, root=0)
 
         # Reset counters
         self.step_count = 0
         self.current_time = 0.0
 
         # Gym expects a float32 array
-        return self._tauw_buffer.astype(np.float32)
+        return tau_global.astype(np.float32)
 
     # Gym Environment: Step
     def step(self, action):
@@ -258,18 +276,27 @@ class StreamsGymEnv(gymnasium.Env):
         # copy gpu to cpu and calculate tau
         streams.wrap_copy_gpu_to_cpu()
         streams.wrap_tauw_calculate()
-        tau = streams.wrap_get_tauw_x(self.tauw_shape)    # returns a NumPy array of length nx
+        tau = streams.wrap_get_tauw_x(self.tauw_shape)  # local portion of τ_w
         self._tauw_buffer[:] = tau
 
-        # Reward: Negative L2 Norm of tau (agent tries to drive shear stress to 0)
-        reward = - float(np.sum(self._tauw_buffer**2))
+        # Gather τ_w from all ranks so that the agent observes the full domain
+        all_tau = self.comm.gather(self._tauw_buffer, root=0)
+        if self.rank == 0:
+            tau_global = np.concatenate(all_tau)
+            reward = -float(np.sum(tau_global**2))  # compute reward on rank 0
+        else:
+            tau_global = None
+            reward = None
+        tau_global = self.comm.bcast(tau_global, root=0)
+        reward = self.comm.bcast(reward, root=0)
 
         # Termination: After `max_episode_steps` steps, done=True
         self.step_count += 1
         done = (self.step_count >= self.max_episode_steps)
 
         # Required Gym Stats:  (obs, reward, done, info)
-        obs = self._tauw_buffer.astype(np.float32)
+        obs = tau_global.astype(np.float32)
+        print(f'[StreamsEnvironment.py] STEP produces obs of shape {obs.shape}')
         info = {
             "time": self.current_time,
             "step": self.step_count,

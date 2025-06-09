@@ -1,35 +1,27 @@
 # General imports
-print("Congrats, made it to rl_control.py")
 import argparse # Used for attribute access, defining default values and data-type, and providing ready made help calls
 import json # collects values from input.json fields, converts them to a nested Python dictionary, which is then converted into a Config object (e.g. config.temporal.num_iter)
 import logging
-print("logging import")
 import os
-print("os import")
 import shutil
-print("shutil import")
 import signal
-print("signal import")
 from pathlib import Path
-print("pathlib import")
 from typing import Tuple
-print("typing.tuple import")
 import numpy as np
-print("np import")
 import torch
-print("torch import")
+print('[rl_control.py] finished standard imports')
 # from tqdm import trange (progress bar, could be a nice touch eventually)
 from mpi4py import rc
 rc.initialize = False
 from mpi4py import MPI
+print('[rl_control.py] finished mpi4py import')
 
 # Script imports
 from StreamsEnvironment import StreamsGymEnv
 from DDPG import ddpg, ReplayBuffer
 from config import Config, JetMethod
 import io_utils
-
-print("Congrats, made it past the RL_imports")
+print('[rl_control.py] finished script imports')
 
 LOGGER = logging.getLogger(__name__)
 STOP = False
@@ -120,29 +112,39 @@ def save_checkpoint(agent: ddpg, directory: Path, tag: str) -> None:
 
 def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
     """Train agent and return path to best checkpoint."""
+    # print("[rl_control.py] Entered training method")
     comm = MPI.COMM_WORLD
     rank = comm.rank
-
+    
+    # print("[rl_control.py] Define objects for observation and action space")
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
-
+    
+    # print("[rl_control.py] Define object for replay buffer")
     buffer = ReplayBufferCustom(state_dim, action_dim, args.buffer_size)
-
+    
+    # print("[rl_control.py] Define reward objects")
     best_reward = -float("inf")
     best_path = Path(args.checkpoint_dir) / "best"
     episode_rewards = []
     for ep in range(args.train_episodes): #, disable=rank != 0):
+        if ep == 0:
+            print('[rl_control.py] Entered training loop; beginning of episode 1')
         if STOP:
             break
         obs = env.reset()
+        print(f'[rl_control.py] Env reset completed. obs shape: {obs.shape}')
         done = False
         ep_reward = 0.0
         while not done:
             if rank == 0:
                 obs_t = torch.tensor(obs, dtype=torch.float32)
+                print("[rl_control.py] action selection in progress")
                 action = agent.choose_action(obs_t)
+                print("[rl_control.py] Action selected")
             else:
                 action = None
+                print("[rl_control.py] No action selected")
             action = comm.bcast(action, root=0)
             next_obs, reward, done, _ = env.step(action)
             done = comm.bcast(done, root=0)
@@ -260,11 +262,16 @@ np.random.seed(args.seed)
 # Use GPU if available. Currently only used for open-loop control
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+print("Initializing Gym Env for run")
 env = StreamsGymEnv() # Import Streams Gym Environment
 state_dim = env.observation_space.shape[0] # Collect the state dimension (tau x, equal to x grid dim)
+print(f'state_dim: {state_dim}')
 action_dim = env.action_space.shape[0] # Collect the action dimension (integer valued jet amplitude)
+print(f'action_dim: {action_dim}')
 max_action = float(env.action_space.high[0]) # Specified in justfile
+print(f'max_action: {max_action}')
 
+print("Initializing DDPG for run")
 agent = ddpg(state_dim, action_dim, max_action) # instantiate the ddpg algorithm
 agent.lr = args.learning_rate # RL parameters stored in args using argparse/json method above
 agent.GAMMA = args.gamma
@@ -272,6 +279,8 @@ agent.TAU = args.tau
 agent.actor_optimizer = torch.optim.Adam(agent.actor.parameters(), lr=agent.lr) #Initialize actor parameters
 agent.critic_optimizer = torch.optim.Adam(agent.critic.parameters(), lr=agent.lr) #Initialize critc parameters
 
+print("Printed before training loop call")
 best_ckpt = train(env, agent, args) # Train the algorithm. Method above.
+print("Printed before evaluation loop call")
 evaluate(env, agent, args, best_ckpt) # Evaluate the algorithm. Method Above.
 
