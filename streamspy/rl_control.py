@@ -9,19 +9,16 @@ from pathlib import Path
 from typing import Tuple
 import numpy as np
 import torch
-print('[rl_control.py] finished standard imports')
 # from tqdm import trange (progress bar, could be a nice touch eventually)
 from mpi4py import rc
 rc.initialize = False
 from mpi4py import MPI
-print('[rl_control.py] finished mpi4py import')
 
 # Script imports
 from StreamsEnvironment import StreamsGymEnv
 from DDPG import ddpg, ReplayBuffer
 from config import Config, JetMethod
 import io_utils
-print('[rl_control.py] finished script imports')
 
 LOGGER = logging.getLogger(__name__)
 STOP = False
@@ -112,9 +109,10 @@ def save_checkpoint(agent: ddpg, directory: Path, tag: str) -> None:
 
 def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
     """Train agent and return path to best checkpoint."""
-    # print("[rl_control.py] Entered training method")
     comm = MPI.COMM_WORLD
     rank = comm.rank
+    if rank == 0:
+        print(f'[rl_control.py] TRAINING')
     
     # print("[rl_control.py] Define objects for observation and action space")
     state_dim = env.observation_space.shape[0]
@@ -127,24 +125,34 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
     best_reward = -float("inf")
     best_path = Path(args.checkpoint_dir) / "best"
     episode_rewards = []
+    
+    # open output file for training statistics on rank 0
+#    if rank == 0:
+#        metrics_path = Path(args.checkpoint_dir) / "training.h5"
+#        h5 = io_utils.IoFile(str(metrics_path))
+#        loss_writes = args.train_episodes * env.max_episode_steps
+#        actor_dset = io_utils.Scalar0D(h5, [1], loss_writes, "actor_loss", rank)
+#        critic_dset = io_utils.Scalar0D(h5, [1], loss_writes, "critic_loss", rank)
+#        ep_dset = io_utils.Scalar0D(h5, [1], args.train_episodes, "episode_reward", rank)
+#    else:
+#        h5 = None
+#        actor_dset = None
+#        critic_dset = None
+#        ep_dset = None
     for ep in range(args.train_episodes): #, disable=rank != 0):
-        if ep == 0:
-            print('[rl_control.py] Entered training loop; beginning of episode 1')
+        if rank == 0:
+            print(f'[rl_control.py] Beginning of training episode {ep}')
         if STOP:
             break
         obs = env.reset()
-        print(f'[rl_control.py] Env reset completed. obs shape: {obs.shape}')
         done = False
         ep_reward = 0.0
         while not done:
             if rank == 0:
                 obs_t = torch.tensor(obs, dtype=torch.float32)
-                print("[rl_control.py] action selection in progress")
                 action = agent.choose_action(obs_t)
-                print("[rl_control.py] Action selected")
             else:
                 action = None
-                print("[rl_control.py] No action selected")
             action = comm.bcast(action, root=0)
             next_obs, reward, done, _ = env.step(action)
             done = comm.bcast(done, root=0)
@@ -158,11 +166,16 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
                 if buffer.size >= agent.batch_size:
                     actor_loss, critic_loss = ddpg_update(agent, buffer)
                     LOGGER.debug("actor_loss=%f critic_loss=%f", actor_loss, critic_loss)
+                    if actor_dset is not None:
+                        actor_dset.write_array(np.array([actor_loss], dtype=np.float32))
+                        critic_dset.write_array(np.array([critic_loss], dtype=np.float32))
                 ep_reward += reward
             obs = next_obs
         if rank == 0:
             episode_rewards.append(ep_reward)
             LOGGER.info("Episode %d reward %.6f", ep + 1, ep_reward)
+#            if ep_dset is not None:
+#                ep_dset.write_array(np.array([ep_reward], dtype=np.float32))
             if ep_reward > best_reward:
                 best_reward = ep_reward
                 save_checkpoint(agent, Path(args.checkpoint_dir), "best")
@@ -170,26 +183,35 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
                 save_checkpoint(agent, Path(args.checkpoint_dir), f"ep{ep + 1}")
     if rank == 0 and not STOP:
         save_checkpoint(agent, Path(args.checkpoint_dir), "final")
+#    if h5 is not None:
+#        h5.close()
     return best_path
 
 def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoint: Path) -> None:
     """Run evaluation episodes using checkpoint."""
     comm = MPI.COMM_WORLD
     rank = comm.rank
+    if rank == 0:
+        print(f'[rl_control.py] EVALUATION')
     agent.actor.load_state_dict(torch.load(checkpoint.with_name("actor_best.pt")))
     agent.critic.load_state_dict(torch.load(checkpoint.with_name("critic_best.pt")))
 
-    write_actions = args.eval_output is not None and rank == 0
-    if write_actions:
-        h5 = io_utils.IoFile(args.eval_output)
-        amp_dset = io_utils.Scalar1D(h5, [args.eval_max_steps], args.eval_episodes, "amplitude", rank)
+#    write_actions = args.eval_output is not None and rank == 0
+#    if write_actions:
+#        h5 = io_utils.IoFile(args.eval_output)
+#        amp_dset = io_utils.Scalar1D(h5, [args.eval_max_steps], args.eval_episodes, "amplitude", rank)
+#        if rank == 0:
+#            print(f'[rl_control.py] write_actions completed in evaluate')
     for ep in range(args.eval_episodes): #, disable=rank != 0):
+        if rank == 0:
+            print(f'[rl_control.py] Beginning of evaluation episode {ep}')
         obs = env.reset()
         done = False
         step = 0
         ep_reward = 0.0
         while not done and step < args.eval_max_steps:
             if rank == 0:
+                print(f'[rl_control.py] Evaluate step = {step}')
                 action = agent.choose_action(torch.tensor(obs, dtype=torch.float32))
             else:
                 action = None
@@ -198,13 +220,14 @@ def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoi
             done = comm.bcast(done, root=0)
             if rank == 0:
                 ep_reward += reward
-                if write_actions:
-                    amp_dset.write_array(np.array([action], dtype=np.float32))
+                print(f'[rl_control.py] reward collected and stored')
+#                if write_actions:
+#                    amp_dset.write_array(np.array([action], dtype=np.float32))
             step += 1
         if rank == 0:
             LOGGER.info("Eval Episode %d reward %.6f", ep + 1, ep_reward)
-    if write_actions:
-        h5.close()
+#    if write_actions:
+#        h5.close()
 
 # Function providing all RL parameters with default values using argparse.
 def parse_args() -> argparse.Namespace:
@@ -222,6 +245,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tau", type=float, default=0.005)
     parser.add_argument("--buffer-size", type=int, default=int(1e6))
     parser.add_argument("--eval-output", type=str, default=None, help="Optional HDF5 file for actions")
+    parser.add_argument("--verbose", type=bool, default=False, help = "Print network details") # action = "store_true", help = "Print network details")
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -243,6 +267,7 @@ if __name__ == "__main__":
         "tau":                 "tau",
         "buffer_size":         "buffer_size",
         "eval_output":         "eval_output",
+        "verbose":             "verbose",
 }
 
 # Loop through overrides and if _overrides and extras keys match, replace the _overrides value with extras value.
@@ -262,25 +287,23 @@ np.random.seed(args.seed)
 # Use GPU if available. Currently only used for open-loop control
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-print("Initializing Gym Env for run")
 env = StreamsGymEnv() # Import Streams Gym Environment
 state_dim = env.observation_space.shape[0] # Collect the state dimension (tau x, equal to x grid dim)
-print(f'state_dim: {state_dim}')
 action_dim = env.action_space.shape[0] # Collect the action dimension (integer valued jet amplitude)
-print(f'action_dim: {action_dim}')
 max_action = float(env.action_space.high[0]) # Specified in justfile
-print(f'max_action: {max_action}')
 
-print("Initializing DDPG for run")
-agent = ddpg(state_dim, action_dim, max_action) # instantiate the ddpg algorithm
+if env.rank == 0:
+    print(f'state_dim: {state_dim}')
+    print(f'action_dim: {action_dim}')
+    print(f'max_action: {max_action}')
+
+agent = ddpg(state_dim, action_dim, max_action, verbose=args.verbose) # instantiate the ddpg algorithm
 agent.lr = args.learning_rate # RL parameters stored in args using argparse/json method above
 agent.GAMMA = args.gamma
 agent.TAU = args.tau
 agent.actor_optimizer = torch.optim.Adam(agent.actor.parameters(), lr=agent.lr) #Initialize actor parameters
 agent.critic_optimizer = torch.optim.Adam(agent.critic.parameters(), lr=agent.lr) #Initialize critc parameters
 
-print("Printed before training loop call")
 best_ckpt = train(env, agent, args) # Train the algorithm. Method above.
-print("Printed before evaluation loop call")
-evaluate(env, agent, args, best_ckpt) # Evaluate the algorithm. Method Above.
 
+evaluate(env, agent, args, best_ckpt) # Evaluate the algorithm. Method Above.

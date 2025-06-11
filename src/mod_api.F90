@@ -88,7 +88,7 @@ subroutine wrap_get_nx_slot(val) bind(C, name="wrap_get_nx_slot")
     !f2py intent(out) val
     implicit none
     integer, intent(out) :: val
-    print *, '>>> wrap_get_nx_slot called, nx_slot =', nx_slot
+    ! print *, '>>> wrap_get_nx_slot called, nx_slot =', nx_slot
     val = nx_slot
 end subroutine wrap_get_nx_slot
 
@@ -121,7 +121,7 @@ subroutine wrap_set_nx_slot(val) bind(C, name="wrap_set_nx_slot")
     implicit none
     integer, intent(in) :: val
     nx_slot = val
-    print *, '>>> wrap_set_nx_slot: setting nx_slot =', val
+    ! print *, '>>> wrap_set_nx_slot: setting nx_slot =', val
 end subroutine wrap_set_nx_slot
 
 subroutine wrap_get_dtglobal(dt_out) bind(C, name="wrap_get_dtglobal")

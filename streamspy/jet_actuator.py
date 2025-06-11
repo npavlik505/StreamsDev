@@ -138,7 +138,7 @@ class SinusoidalActuator(AbstractActuator):
 
 class DMDcActuator(AbstractActuator):
     def __init__(self, amplitude: float, slot_start: int, slot_end: int, rank: int, config: Config):
-        utils.hprint("initializing a constant DMDc actuator")
+        utils.hprint("initializing an actuator for DMDc")
 
         self.slot_start = slot_start
         self.slot_end = slot_end
@@ -198,7 +198,7 @@ class DMDcActuator(AbstractActuator):
 
 class AdaptiveActuator(AbstractActuator):
     def __init__(self, amplitude: float, slot_start: int, slot_end: int, rank: int, config: Config):
-        utils.hprint("initializing a constant velocity actuator")
+        utils.hprint("initializing an adaptive actuator")
 
         self.slot_start = slot_start
         self.slot_end = slot_end
@@ -217,7 +217,7 @@ def init_actuator(rank: int, config: Config) -> AbstractActuator:
     if jet_config.jet_method == JetMethod.none:
         return NoActuation()
     elif jet_config.jet_method == JetMethod.constant:
-        print(jet_config.extra_json)
+        # print(jet_config.extra_json)
         # these should be guaranteed to exist in the additional json information
         # so we can essentially ignore the errors that we have here
         slot_start = jet_config.extra_json["slot_start"]
@@ -226,7 +226,7 @@ def init_actuator(rank: int, config: Config) -> AbstractActuator:
 
         return ConstantActuator(amplitude, slot_start, slot_end, rank, config);
     elif jet_config.jet_method == JetMethod.sinusoidal:
-        print(jet_config.extra_json)
+        # print(jet_config.extra_json)
         # these should be guaranteed to exist in the additional json information
         # so we can essentially ignore the errors that we have here
         slot_start = jet_config.extra_json["slot_start"]
@@ -236,7 +236,7 @@ def init_actuator(rank: int, config: Config) -> AbstractActuator:
 
         return SinusoidalActuator(amplitude, slot_start, slot_end, rank, config, angular_frequency);
     elif jet_config.jet_method == JetMethod.DMDc:
-        print(jet_config.extra_json)
+        # print(jet_config.extra_json)
         # these should be guaranteed to exist in the additional json information
         # so we can essentially ignore the errors that we have here
         slot_start = jet_config.extra_json["slot_start"]
@@ -245,7 +245,7 @@ def init_actuator(rank: int, config: Config) -> AbstractActuator:
 
         return DMDcActuator(amplitude, slot_start, slot_end, rank, config);
     elif jet_config.jet_method == JetMethod.adaptive:
-        print(jet_config.extra_json)
+        # print(jet_config.extra_json)
         # these should be guaranteed to exist in the additional json information
         # so we can essentially ignore the errors that we have here
         slot_start = jet_config.extra_json["slot_start"]

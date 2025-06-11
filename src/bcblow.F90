@@ -109,9 +109,7 @@ subroutine local_slot_locations()
     integer :: true_slot_start, slot_length, slot_end_local, nxmax
     integer :: x_end_slot ! For debugging
 
-    if (masterproc) then
-        write(*, *) "slot start and slot end (global) is ", slot_start_x_global, slot_end_x_global
-    endif
+    write(*, *) "slot start and slot end (global) is ", slot_start_x_global, slot_end_x_global
 
     ! the STARTING location in a global reference frame of what grid we are 
     ! responsible for on this MPI node
@@ -174,10 +172,16 @@ subroutine local_slot_locations()
         nz_slot = 0
     endif
  
-    write(*, *) "on nrank ", nrank, "the slot starts at ", x_start_slot, " and ends at ", slot_end_local, &
-        " which is ", nx_slot, " in length, mpi xstart ", mpi_xstart, "mpi xend", mpi_xend, &
-        " force sbli bc is ", force_sbli_blowing_bc
-     
+!    write(*, *) "on nrank ", nrank, "the slot starts at ", x_start_slot, " and ends at ", slot_end_local, &
+!        " which is ", nx_slot, " in length, mpi xstart ", mpi_xstart, "mpi xend", mpi_xend, &
+!        " force sbli bc is ", force_sbli_blowing_bc
+
+    write (*,'("on nrank ",i0," the slot starts at ",i0," and ends at ",i0, &
+            " which is ",i0," in length, mpi xstart ",i0," mpi xend ",i0, &
+            " force sbli bc is ",i0)')  &
+        nrank, x_start_slot, slot_end_local, nx_slot, mpi_xstart, mpi_xend, &
+        force_sbli_blowing_bc
+
 end subroutine local_slot_locations
 
 ! copy

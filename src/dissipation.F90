@@ -165,7 +165,7 @@ subroutine generate_full_fdm_stencil()
         enddo
     enddo
 
-    write(*,*) "total of stencil coefficients is", total
+    if (masterproc) write(*,*) "total of stencil coefficients is", total
 
 ! copy over to GPU variable
 #ifdef USE_CUDA

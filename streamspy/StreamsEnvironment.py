@@ -159,6 +159,12 @@ class StreamsGymEnv(gymnasium.Env):
         # Tau storage, overwritten each step
         self._tauw_buffer = np.zeros((self.tauw_shape,), dtype=np.float64)
 
+        if self.rank == 0:
+            print(f'[StreamsEnvironment.py] gym environment initialized')
+            print(f'Step_count: {self.step_count}')
+            print(f'max_episode_steps (--steps in justfile): {self.max_episode_steps}')
+            print(f'current_time: {self.current_time}')
+
     # setup_solver definition: initialized solver on first call, closes solver and reinits on subsequent calls
     # def _setup_solver(self):
     def _setup_solver(self, *, restart_mpi: bool = False) -> None:
@@ -177,6 +183,9 @@ class StreamsGymEnv(gymnasium.Env):
         #     streams.wrap_finalize()
         # except Exception:
         #     pass
+        
+        if self.rank == 0:
+            print('[StreamsEnvironment.py] PYTHON _SETUP_SOLVER METHOD CALLED')
 
         if restart_mpi:
             # Finalize the solver and MPI stack completely.  This is normally
@@ -184,29 +193,41 @@ class StreamsGymEnv(gymnasium.Env):
             # Python module.
             try:
                 streams.wrap_finalize_solver()
+                if self.rank == 0:
+                    print('streams.wrap_finalize_solver() called')
             except Exception:
                 pass
             try:
                 streams.wrap_finalize()
+                if self.rank == 0:
+                    print('streams.wrap_finalize() called')
             except Exception:
                 pass
             try:
                 streams.wrap_deallocate_all()
+                if self.rank == 0:
+                    print('streams.wrap_deallocate_all() called')
             except Exception:
                 pass
             # When MPI is fully finalized we must start it again before
             # continuing with solver setup.
             streams.wrap_startmpi()
+            if self.rank == 0:
+                print('streams.wrap_start_mpi() called')
         else:
             # Standard environment reset: only tear down the solver while MPI
             # remains active.  This avoids the cost and side effects of a full
             # MPI finalize/startup cycle.
             try:
                 streams.wrap_finalize_solver()
+                if self.rank == 0:
+                    print('streams.wrap_finalize_solver() called')
             except Exception:
                 pass
             try:
                 streams.wrap_deallocate_all()
+                if self.rank == 0:
+                    print('streams.wrap_deallocate_all() called')
             except Exception:
                 pass
 
@@ -222,18 +243,18 @@ class StreamsGymEnv(gymnasium.Env):
         Re‐initializes the STREAmS solver to a 'cold start' (no previous steps taken),
         then returns the initial τw(x) as the observation.
         """
+        if self.rank == 0:
+            print('[StreamsEnvironment.py] PYTHON RESET() METHOD CALLED')
 
         super().reset(seed=seed) # seeding not currently used, but kept for future use
-
+        
         self._setup_solver() # End previous solver and rebuild it
-
         self.actuator = self.jet_actuator.init_actuator(self.rank, self.config) # Re‐build actuator
 
         # Immediately compute tau on the new solver (no time steps taken yet)
         streams.wrap_copy_gpu_to_cpu() # bring everything from GPU to CPU
         streams.wrap_tauw_calculate() # ask Fortran to compute τau(x) on the CPU
         tau = streams.wrap_get_tauw_x(self.tauw_shape)
-        print(f'[StreamsEnvironment.py] tau shape from gym reset: {tau.shape}')
         self._tauw_buffer[:] = tau  # temporary tau storage
         
         # Gather τ_w from all MPI ranks and broadcast the concatenated array
@@ -272,6 +293,8 @@ class StreamsGymEnv(gymnasium.Env):
         # Update time
         dt = float(streams.wrap_get_dtglobal())
         self.current_time += dt
+        self.dt_dset.write_array(np.array([dt], dtype=np.float32))
+        self.amplitude_dset.write_array(np.array([amp], dtype=np.float32))
 
         # copy gpu to cpu and calculate tau
         streams.wrap_copy_gpu_to_cpu()
@@ -296,7 +319,8 @@ class StreamsGymEnv(gymnasium.Env):
 
         # Required Gym Stats:  (obs, reward, done, info)
         obs = tau_global.astype(np.float32)
-        print(f'[StreamsEnvironment.py] STEP produces obs of shape {obs.shape}')
+        if self.rank == 0:
+            print(f'[StreamsEnvironment.py] STEP {self.step_count}') # produces obs of shape {obs.shape}')
         info = {
             "time": self.current_time,
             "step": self.step_count,
@@ -308,9 +332,24 @@ class StreamsGymEnv(gymnasium.Env):
         """
         Cleanly finalize the solver before shutting down.
         """
+        if self.rank == 0:
+            print('[StreamsEnvironment.py] PYTHON CLOSE METHOD CALLED')
         try:
             streams.wrap_finalize_solver()
+            if self.rank == 0:
+                print('streams.wrap_finalize_solver() called')            
             streams.wrap_finalize()
+            if self.rank == 0:
+                print('streams.wrap_finalize() called')
+        except Exception:
+            pass
+        try:
+            if self.rank == 0:
+                print('closing h5 files')
+            self.flowfields.close()
+            self.span_averages.close()
+            self.trajectories.close()
+            self.mesh_h5.close()
         except Exception:
             pass
 
