@@ -126,19 +126,14 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
     best_path = Path(args.checkpoint_dir) / "best"
     episode_rewards = []
     
-    # open output file for training statistics on rank 0
-#    if rank == 0:
-#        metrics_path = Path(args.checkpoint_dir) / "training.h5"
-#        h5 = io_utils.IoFile(str(metrics_path))
-#        loss_writes = args.train_episodes * env.max_episode_steps
-#        actor_dset = io_utils.Scalar0D(h5, [1], loss_writes, "actor_loss", rank)
-#        critic_dset = io_utils.Scalar0D(h5, [1], loss_writes, "critic_loss", rank)
-#        ep_dset = io_utils.Scalar0D(h5, [1], args.train_episodes, "episode_reward", rank)
-#    else:
-#        h5 = None
-#        actor_dset = None
-#        critic_dset = None
-#        ep_dset = None
+    # open output file for training statistics on all ranks
+    metrics_path = Path(args.checkpoint_dir) / "training.h5"
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    h5 = io_utils.IoFile(str(metrics_path))
+    loss_writes = args.train_episodes * env.max_episode_steps
+    actor_dset = io_utils.Scalar0D(h5, [1], loss_writes, "actor_loss", rank)
+    critic_dset = io_utils.Scalar0D(h5, [1], loss_writes, "critic_loss", rank)
+    ep_dset = io_utils.Scalar0D(h5, [1], args.train_episodes, "episode_reward", rank)
     for ep in range(args.train_episodes): #, disable=rank != 0):
         if rank == 0:
             print(f'[rl_control.py] Beginning of training episode {ep}')
@@ -183,8 +178,7 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
                 save_checkpoint(agent, Path(args.checkpoint_dir), f"ep{ep + 1}")
     if rank == 0 and not STOP:
         save_checkpoint(agent, Path(args.checkpoint_dir), "final")
-#    if h5 is not None:
-#        h5.close()
+    h5.close()
     return best_path
 
 def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoint: Path) -> None:
@@ -196,12 +190,15 @@ def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoi
     agent.actor.load_state_dict(torch.load(checkpoint.with_name("actor_best.pt")))
     agent.critic.load_state_dict(torch.load(checkpoint.with_name("critic_best.pt")))
 
-#    write_actions = args.eval_output is not None and rank == 0
-#    if write_actions:
-#        h5 = io_utils.IoFile(args.eval_output)
-#        amp_dset = io_utils.Scalar1D(h5, [args.eval_max_steps], args.eval_episodes, "amplitude", rank)
-#        if rank == 0:
-#            print(f'[rl_control.py] write_actions completed in evaluate')
+    write_actions = args.eval_output is not None
+    if write_actions:
+        eval_output_path = Path(args.eval_output)
+        eval_output_path.parent.mkdir(parents=True, exist_ok=True)
+        h5 = io_utils.IoFile(str(eval_output_path))
+        total_steps = args.eval_episodes * args.eval_max_steps
+        amp_dset = io_utils.Scalar0D(h5, [1], total_steps, "amplitude", rank)
+        if rank == 0:
+            print(f'[rl_control.py] write_actions completed in evaluate')
     for ep in range(args.eval_episodes): #, disable=rank != 0):
         if rank == 0:
             print(f'[rl_control.py] Beginning of evaluation episode {ep}')
@@ -221,13 +218,14 @@ def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoi
             if rank == 0:
                 ep_reward += reward
                 print(f'[rl_control.py] reward collected and stored')
-#                if write_actions:
-#                    amp_dset.write_array(np.array([action], dtype=np.float32))
+                if write_actions:
+                    amp_dset.write_array(np.array(action, dtype=np.float32))
             step += 1
         if rank == 0:
             LOGGER.info("Eval Episode %d reward %.6f", ep + 1, ep_reward)
-#    if write_actions:
-#        h5.close()
+    if write_actions:
+        amp_dset.close()
+        h5.close()
 
 # Function providing all RL parameters with default values using argparse.
 def parse_args() -> argparse.Namespace:
