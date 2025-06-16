@@ -71,6 +71,16 @@ class ExportDataset(ABC):
             raise ValueError(f"reported dimension ({self._dim}) in initialization is different from argument `array` {len(array.shape)}")
 
         return True
+        
+    # Attempted solution for h5 error (Post evaluation loop)
+    def close(self):
+        """Release the underlying HDF5 dataset handle if present."""
+        try:
+            self.dset.id.close()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    # End of attempted solution for h5 error (Post evaluation loop)
+
 
 # Used when exporting a vector field HDF5 file with the MPI split along exclusively the x-axis
 #

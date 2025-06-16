@@ -307,3 +307,6 @@ agent.critic_optimizer = torch.optim.Adam(agent.critic.parameters(), lr=agent.lr
 best_ckpt = train(env, agent, args) # Train the algorithm. Method above.
 
 evaluate(env, agent, args, best_ckpt) # Evaluate the algorithm. Method Above.
+
+env.close()
+

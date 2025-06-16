@@ -337,15 +337,43 @@ class StreamsGymEnv(gymnasium.Env):
         try:
             streams.wrap_finalize_solver()
             if self.rank == 0:
-                print('streams.wrap_finalize_solver() called')            
-            streams.wrap_finalize()
-            if self.rank == 0:
+#                print('streams.wrap_finalize_solver() called')            
+#            streams.wrap_finalize()
+#            if self.rank == 0:
+#                print('streams.wrap_finalize() called')
                 print('streams.wrap_finalize() called')
         except Exception:
             pass
+
         try:
             if self.rank == 0:
                 print('closing h5 files')
+                
+            # Attempted solution for h5 error (Post evaluation loop)
+            # Close datasets before closing their files to avoid h5py errors
+
+            # Close datasets before calling MPI_Finalize to avoid HDF5 error when the MPI driver is used.
+            for ds in [
+                getattr(self, name)
+                for name in [
+                    'velocity_dset',
+                    'flowfield_time_dset',
+                    'span_average_dset',
+                    'shear_stress_dset',
+                    'span_average_time_dset',
+                    'dissipation_rate_dset',
+                    'energy_dset',
+                    'dt_dset',
+                    'amplitude_dset',
+                ]
+                if hasattr(self, name)
+            ]:
+                try:
+                    ds.close()
+                except Exception:
+                    pass
+            # End of attempted solution for h5 error (Post evaluation loop)
+
             self.flowfields.close()
             self.span_averages.close()
             self.trajectories.close()
@@ -353,6 +381,13 @@ class StreamsGymEnv(gymnasium.Env):
         except Exception:
             pass
 
+
+        try:
+            streams.wrap_finalize()
+            if self.rank == 0:
+                print('streams.wrap_finalize() called')
+        except Exception:
+            pass
 
 #────────────────────────────────────────────────────────────────────────────────
 # If you want to test the environment quickly from the command line,
