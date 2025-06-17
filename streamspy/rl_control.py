@@ -37,7 +37,9 @@ def setup_logging() -> None:
     """Configure root logger to log to console and file."""
     LOGGER.setLevel(logging.INFO)
     fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    fh = logging.FileHandler("rl_control.log")
+    log_path = Path("RL_metrics/rl_control.log")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = logging.FileHandler(log_path)
     fh.setFormatter(fmt)
     ch = logging.StreamHandler()
     ch.setFormatter(fmt)
@@ -168,7 +170,7 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
             obs = next_obs
         if rank == 0:
             episode_rewards.append(ep_reward)
-            LOGGER.info("Episode %d reward %.6f", ep + 1, ep_reward)
+            LOGGER.info("Training Episode %d reward %.6f", ep + 1, ep_reward)
 #            if ep_dset is not None:
 #                ep_dset.write_array(np.array([ep_reward], dtype=np.float32))
             if ep_reward > best_reward:
@@ -197,6 +199,8 @@ def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoi
         h5 = io_utils.IoFile(str(eval_output_path))
         total_steps = args.eval_episodes * args.eval_max_steps
         amp_dset = io_utils.Scalar0D(h5, [1], total_steps, "amplitude", rank)
+        reward_dset = io_utils.Scalar0D(h5, [1], total_steps, "reward", rank)
+        obs_dset = io_utils.Scalar1D(h5, [env.observation_space.shape[0]], total_steps, "observation", rank)
         if rank == 0:
             print(f'[rl_control.py] write_actions completed in evaluate')
     for ep in range(args.eval_episodes): #, disable=rank != 0):
@@ -220,11 +224,15 @@ def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoi
                 print(f'[rl_control.py] reward collected and stored')
                 if write_actions:
                     amp_dset.write_array(np.array(action, dtype=np.float32))
+                    reward_dset.write_array(np.array([reward], dtype=np.float32))
+                    obs_dset.write_array(np.array(obs, dtype=np.float32))
             step += 1
         if rank == 0:
             LOGGER.info("Eval Episode %d reward %.6f", ep + 1, ep_reward)
     if write_actions:
         amp_dset.close()
+        reward_dset.close()
+        obs_dset.close()
         h5.close()
 
 # Function providing all RL parameters with default values using argparse.
@@ -235,7 +243,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-episodes", type=int, default=10)
     parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument("--eval-max-steps", type=int, default=1000)
-    parser.add_argument("--checkpoint-dir", type=str, default="./output/checkpoint")
+    parser.add_argument("--checkpoint-dir", type=str, default="./RL_metrics/checkpoint")
     parser.add_argument("--checkpoint-interval", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
