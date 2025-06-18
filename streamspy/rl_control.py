@@ -142,19 +142,14 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
         training_output_path = Path(args.training_output)
         training_output_path.parent.mkdir(parents=True, exist_ok=True)
         h5train = io_utils.IoFile(str(training_output_path))
-        # total_steps = args.eval_episodes * args.eval_max_steps
         training_episodes = args.train_episodes
         training_steps = env.max_episode_steps
         observation_dim = env.observation_space.shape[0]
         
-        # if rank ==0:
-            # amp_dset = io_utils.Scalar0D(h5train, [1], total_steps, "amplitude", rank)
-            # reward_dset = io_utils.Scalar0D(h5train, [1], total_steps, "reward", rank)
-            # obs_dset = io_utils.Scalar1D(h5train, [env.observation_space.shape[0]], total_steps, "observation", rank)
+        time_dset = h5train.file.create_dataset("time", shape = (training_episodes, training_steps), dtype = "f4")
         amp_dset = h5train.file.create_dataset("amplitude", shape = (training_episodes, training_steps), dtype = "f4")
         reward_dset = h5train.file.create_dataset("reward", shape = (training_episodes, training_steps), dtype = "f4")
         obs_dset = h5train.file.create_dataset("observation", shape = (training_episodes, training_steps, observation_dim), dtype = "f4")
-        print(f'[rl_control.py] write_training completed in evaluate')
             
     for ep in range(args.train_episodes): #, disable=rank != 0):
         if rank == 0:
@@ -172,15 +167,13 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
             else:
                 action = None
             action = comm.bcast(action, root=0)
-            next_obs, reward, done, _ = env.step(action)
+            next_obs, reward, done, info = env.step(action)
             done = comm.bcast(done, root=0)
             if rank == 0:
                 ep_reward += reward
                 print(f'[rl_control.py] reward collected and stored')
                 if write_training:
-                    # amp_dset.write_array(np.array(action, dtype=np.float32))
-                    # reward_dset.write_array(np.array([reward], dtype=np.float32))
-                    # obs_dset.write_array(np.array(obs, dtype=np.float32))
+                    time_dset[ep, step] = info["time"]
                     amp_dset[ep, step] = action
                     reward_dset[ep, step] = reward
                     obs_dset[ep, step, :] = obs
@@ -202,8 +195,6 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
         if rank == 0:
             episode_rewards.append(ep_reward)
             LOGGER.info("Training Episode %d reward %.6f", ep + 1, ep_reward)
-#            if ep_dset is not None:
-#                ep_dset.write_array(np.array([ep_reward], dtype=np.float32))
             if ep_reward > best_reward:
                 best_reward = ep_reward
                 save_checkpoint(agent, Path(args.checkpoint_dir), "best")
@@ -235,12 +226,14 @@ def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoi
         eval_output_path = Path(args.eval_output)
         eval_output_path.parent.mkdir(parents=True, exist_ok=True)
         h5eval = io_utils.IoFile(str(eval_output_path))
-        total_steps = args.eval_episodes * args.eval_max_steps
-        amp_dset = io_utils.Scalar0D(h5eval, [1], total_steps, "amplitude", rank)
-        reward_dset = io_utils.Scalar0D(h5eval, [1], total_steps, "reward", rank)
-        obs_dset = io_utils.Scalar1D(h5eval, [env.observation_space.shape[0]], total_steps, "observation", rank)
-        if rank == 0:
-            print(f'[rl_control.py] write_eval completed in evaluate')
+        eval_episodes = args.eval_episodes
+        eval_steps = env.max_episode_steps
+        observation_dim = env.observation_space.shape[0]
+        
+        time_dset = h5eval.file.create_dataset("time", shape = (eval_episodes, eval_steps), dtype = "f4")
+        amp_dset = h5eval.file.create_dataset("amplitude", shape = (eval_episodes, eval_steps), dtype = "f4")
+        reward_dset = h5eval.file.create_dataset("reward", shape = (eval_episodes, eval_steps), dtype = "f4")
+        obs_dset = h5eval.file.create_dataset("observation", shape = (eval_episodes, eval_steps, observation_dim), dtype = "f4")
     for ep in range(args.eval_episodes): #, disable=rank != 0):
         if rank == 0:
             print(f'[rl_control.py] Beginning of evaluation episode {ep}')
@@ -255,22 +248,21 @@ def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoi
             else:
                 action = None
             action = comm.bcast(action, root=0)
-            obs, reward, done, _ = env.step(action)
+            obs, reward, done, info = env.step(action)
             done = comm.bcast(done, root=0)
             if rank == 0:
                 ep_reward += reward
                 print(f'[rl_control.py] reward collected and stored')
                 if write_eval:
-                    amp_dset.write_array(np.array(action, dtype=np.float32))
-                    reward_dset.write_array(np.array([reward], dtype=np.float32))
-                    obs_dset.write_array(np.array(obs, dtype=np.float32))
+                    time_dset[ep, step] = info["time"]
+                    amp_dset[ep, step] = action
+                    reward_dset[ep, step] = reward
+                    obs_dset[ep, step, :] = obs
             step += 1
         if rank == 0:
             LOGGER.info("Eval Episode %d reward %.6f", ep + 1, ep_reward)
     if write_eval:
-        amp_dset.close()
-        reward_dset.close()
-        obs_dset.close()
+        comm.Barrier()
         h5eval.close()
 
 # Function providing all RL parameters with default values using argparse.
