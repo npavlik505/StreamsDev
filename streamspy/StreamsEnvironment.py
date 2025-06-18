@@ -1,5 +1,7 @@
 # streams_gym_env.py
 
+# NOTE: The h5 generation found in main.py (trajectories, flowfields, span_averages, mesh_h5) has been removed for now, with the idea that the effect of whatever trained (or partially trained) neural network will be seen in main.py. If main.py is converted to use the gym environment or the aforementioned h5 should be generated in the evaluate loop, then commmented code blocks under "(Re-implement if gym used for main loop)" should be uncommented and modified so that they calculate and save h5 files as the setup requires. As of now the commented out h5 generation is functional but incomplete and not useful.
+
 # Gym and standard imports
 import os
 import sys
@@ -85,11 +87,12 @@ class StreamsGymEnv(gymnasium.Env):
         # Define the observation_space as config.grid.nx, the number of grid points in the x (streamwise) direction
         self.nx = self.config.grid.nx
 
-        # Initialize datasets and HDF5 output files
-        self.flowfields = io_utils.IoFile("/distribute_save/flowfields.h5")
-        self.span_averages = io_utils.IoFile("/distribute_save/span_averages.h5")
-        self.trajectories = io_utils.IoFile("/distribute_save/trajectories.h5")
-        self.mesh_h5 = io_utils.IoFile("/distribute_save/mesh.h5")
+        # (Re-implement if gym used for main loop)
+        # Initialize datasets and HDF5 output files (Re-implement if gym used for main loop)
+        # self.flowfields = io_utils.IoFile("/distribute_save/flowfields.h5")
+        # self.span_averages = io_utils.IoFile("/distribute_save/span_averages.h5")
+        # self.trajectories = io_utils.IoFile("/distribute_save/trajectories.h5")
+        # self.mesh_h5 = io_utils.IoFile("/distribute_save/mesh.h5")
 
         grid_shape = [self.config.grid.nx, self.config.grid.ny, self.config.grid.nz]
         span_average_shape = [self.config.grid.nx, self.config.grid.ny]
@@ -99,36 +102,41 @@ class StreamsGymEnv(gymnasium.Env):
             flowfield_writes = int(math.ceil(self.config.temporal.num_iter / self.config.temporal.full_flowfield_io_steps))
         else:
             flowfield_writes = 0
-        self.velocity_dset = io_utils.VectorField3D(self.flowfields, [5, *grid_shape], flowfield_writes, "velocity", self.rank)
-        self.flowfield_time_dset = io_utils.Scalar1D(self.flowfields, [1], flowfield_writes, "time", self.rank)
+        # (Re-implement if gym used for main loop)
+        # self.velocity_dset = io_utils.VectorField3D(self.flowfields, [5, *grid_shape], flowfield_writes, "velocity", self.rank)
+        # self.flowfield_time_dset = io_utils.Scalar1D(self.flowfields, [1], flowfield_writes, "time", self.rank)
 
         # span average files
         numwrites = int(math.ceil(self.config.temporal.num_iter / self.config.temporal.span_average_io_steps))
 
+        # (Re-implement if gym used for main loop)
         # this is rho, u, v, w, E (already normalized from the rho u, rho v... values from streams)
-        self.span_average_dset = io_utils.VectorFieldXY2D(self.span_averages, [5, * span_average_shape], numwrites, "span_average", self.rank)
-        self.shear_stress_dset = io_utils.ScalarFieldX1D(self.span_averages, [self.config.grid.nx], numwrites, "shear_stress", self.rank)
-        self.span_average_time_dset = io_utils.Scalar0D(self.span_averages, [1], numwrites, "time", self.rank)
-        self.dissipation_rate_dset = io_utils.Scalar0D(self.span_averages, [1], numwrites, "dissipation_rate", self.rank)
-        self.energy_dset = io_utils.Scalar0D(self.span_averages, [1], numwrites, "energy", self.rank)
+        # self.span_average_dset = io_utils.VectorFieldXY2D(self.span_averages, [5, * span_average_shape], numwrites, "span_average", self.rank)
+        # self.shear_stress_dset = io_utils.ScalarFieldX1D(self.span_averages, [self.config.grid.nx], numwrites, "shear_stress", self.rank)
+        # self.span_average_time_dset = io_utils.Scalar0D(self.span_averages, [1], numwrites, "time", self.rank)
+        # self.dissipation_rate_dset = io_utils.Scalar0D(self.span_averages, [1], numwrites, "dissipation_rate", self.rank)
+        # self.energy_dset = io_utils.Scalar0D(self.span_averages, [1], numwrites, "energy", self.rank)
 
+        # (Re-implement if gym used for main loop)
         # trajectories files
-        self.dt_dset = io_utils.Scalar0D(self.trajectories, [1], self.config.temporal.num_iter, "dt", self.rank)
-        self.amplitude_dset = io_utils.Scalar0D(self.trajectories, [1], self.config.temporal.num_iter, "jet_amplitude", self.rank)
+        # self.dt_dset = io_utils.Scalar0D(self.trajectories, [1], self.config.temporal.num_iter, "dt", self.rank)
+        # self.amplitude_dset = io_utils.Scalar0D(self.trajectories, [1], self.config.temporal.num_iter, "jet_amplitude", self.rank)
 
+        # (Re-implement if gym used for main loop)
         # mesh datasets
-        x_mesh_dset = io_utils.Scalar1DX(self.mesh_h5, [self.config.grid.nx], 1, "x_grid", self.rank)
-        y_mesh_dset = io_utils.Scalar1D(self.mesh_h5, [self.config.grid.ny], 1, "y_grid", self.rank)
-        z_mesh_dset = io_utils.Scalar1D(self.mesh_h5, [self.config.grid.nz], 1, "z_grid", self.rank)
+        # x_mesh_dset = io_utils.Scalar1DX(self.mesh_h5, [self.config.grid.nx], 1, "x_grid", self.rank)
+        # y_mesh_dset = io_utils.Scalar1D(self.mesh_h5, [self.config.grid.ny], 1, "y_grid", self.rank)
+        # z_mesh_dset = io_utils.Scalar1D(self.mesh_h5, [self.config.grid.nz], 1, "z_grid", self.rank)
 
         # Generate Mesh (includes ghost nodes)
         x_mesh = streams.wrap_get_x(self.config.x_start(), self.config.x_end()) 
         y_mesh = streams.wrap_get_y(self.config.y_start(), self.config.y_end())
         z_mesh = streams.wrap_get_z(self.config.z_start(), self.config.z_end())
 
-        x_mesh_dset.write_array(x_mesh)
-        y_mesh_dset.write_array(y_mesh)
-        z_mesh_dset.write_array(z_mesh)
+        # (Re-implement if gym used for main loop)
+        # x_mesh_dset.write_array(x_mesh)
+        # y_mesh_dset.write_array(y_mesh)
+        # z_mesh_dset.write_array(z_mesh)
 
 
         # Initialize actuator
@@ -177,12 +185,6 @@ class StreamsGymEnv(gymnasium.Env):
         ``wrap_finalize`` followed by ``wrap_startmpi`` before reinitializing the
         solver.
         """
-        # try:
-        #     # if streams.wrap_finalize_solver() fails (because it's never been set up), we ignore
-        #     streams.wrap_finalize_solver()
-        #     streams.wrap_finalize()
-        # except Exception:
-        #     pass
         
         if self.rank == 0:
             print('[StreamsEnvironment.py] PYTHON _SETUP_SOLVER METHOD CALLED')
@@ -293,8 +295,9 @@ class StreamsGymEnv(gymnasium.Env):
         # Update time
         dt = float(streams.wrap_get_dtglobal())
         self.current_time += dt
-        self.dt_dset.write_array(np.array([dt], dtype=np.float32))
-        self.amplitude_dset.write_array(np.array([amp], dtype=np.float32))
+        # (Re-implement if gym used for main loop)
+        # self.dt_dset.write_array(np.array([dt], dtype=np.float32))
+        # self.amplitude_dset.write_array(np.array([amp], dtype=np.float32))
 
         # copy gpu to cpu and calculate tau
         streams.wrap_copy_gpu_to_cpu()
@@ -337,10 +340,6 @@ class StreamsGymEnv(gymnasium.Env):
         try:
             streams.wrap_finalize_solver()
             if self.rank == 0:
-#                print('streams.wrap_finalize_solver() called')            
-#            streams.wrap_finalize()
-#            if self.rank == 0:
-#                print('streams.wrap_finalize() called')
                 print('streams.wrap_finalize() called')
         except Exception:
             pass
@@ -348,9 +347,6 @@ class StreamsGymEnv(gymnasium.Env):
         try:
             if self.rank == 0:
                 print('closing h5 files')
-                
-            # Attempted solution for h5 error (Post evaluation loop)
-            # Close datasets before closing their files to avoid h5py errors
 
             # Close datasets before calling MPI_Finalize to avoid HDF5 error when the MPI driver is used.
             for ds in [
@@ -372,12 +368,12 @@ class StreamsGymEnv(gymnasium.Env):
                     ds.close()
                 except Exception:
                     pass
-            # End of attempted solution for h5 error (Post evaluation loop)
 
-            self.flowfields.close()
-            self.span_averages.close()
-            self.trajectories.close()
-            self.mesh_h5.close()
+            # (Re-implement if gym used for main loop)
+            # self.flowfields.close()
+            # self.span_averages.close()
+            # self.trajectories.close()
+            # self.mesh_h5.close()
         except Exception:
             pass
 

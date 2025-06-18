@@ -137,8 +137,10 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
     critic_dset = io_utils.Scalar0D(h5, [1], loss_writes, "critic_loss", rank)
     ep_dset = io_utils.Scalar0D(h5, [1], args.train_episodes, "episode_reward", rank)
     
+    # open output file for time, amp, reward, and obs in the training loop to be collected
     write_training = args.training_output is not None
     if write_training:
+        # Define path, create directory and h5, gather data to allocate shape
         training_output_path = Path(args.training_output)
         training_output_path.parent.mkdir(parents=True, exist_ok=True)
         h5train = io_utils.IoFile(str(training_output_path))
@@ -146,6 +148,13 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
         training_steps = env.max_episode_steps
         observation_dim = env.observation_space.shape[0]
         
+        # Define frequency of collection
+        if training_steps/10 >= 1:
+            write_spacing = training_steps // 10
+        else:
+            write_spacing = 1
+        
+        # Create datasets within the h5 file
         time_dset = h5train.file.create_dataset("time", shape = (training_episodes, training_steps), dtype = "f4")
         amp_dset = h5train.file.create_dataset("amplitude", shape = (training_episodes, training_steps), dtype = "f4")
         reward_dset = h5train.file.create_dataset("reward", shape = (training_episodes, training_steps), dtype = "f4")
@@ -171,8 +180,7 @@ def train(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace) -> Path:
             done = comm.bcast(done, root=0)
             if rank == 0:
                 ep_reward += reward
-                print(f'[rl_control.py] reward collected and stored')
-                if write_training:
+                if write_training and step % write_spacing == 0:
                     time_dset[ep, step] = info["time"]
                     amp_dset[ep, step] = action
                     reward_dset[ep, step] = reward
@@ -221,8 +229,10 @@ def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoi
     agent.actor.load_state_dict(torch.load(checkpoint.with_name("actor_best.pt")))
     agent.critic.load_state_dict(torch.load(checkpoint.with_name("critic_best.pt")))
 
+    # open output file for time, amp, reward, and obs in the evaluation loop to be collected
     write_eval = args.eval_output is not None
     if write_eval:
+        # Define path, create directory and h5, gather data to allocate shape
         eval_output_path = Path(args.eval_output)
         eval_output_path.parent.mkdir(parents=True, exist_ok=True)
         h5eval = io_utils.IoFile(str(eval_output_path))
@@ -230,6 +240,13 @@ def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoi
         eval_steps = env.max_episode_steps
         observation_dim = env.observation_space.shape[0]
         
+        # Define frequency of collection
+        if eval_steps/10 >= 1:
+            write_spacing = eval_steps // 10
+        else:
+            write_spacing = 1
+        
+        # Create datasets within the h5 file
         time_dset = h5eval.file.create_dataset("time", shape = (eval_episodes, eval_steps), dtype = "f4")
         amp_dset = h5eval.file.create_dataset("amplitude", shape = (eval_episodes, eval_steps), dtype = "f4")
         reward_dset = h5eval.file.create_dataset("reward", shape = (eval_episodes, eval_steps), dtype = "f4")
@@ -252,8 +269,7 @@ def evaluate(env: StreamsGymEnv, agent: ddpg, args: argparse.Namespace, checkpoi
             done = comm.bcast(done, root=0)
             if rank == 0:
                 ep_reward += reward
-                print(f'[rl_control.py] reward collected and stored')
-                if write_eval:
+                if write_eval and step % write_spacing == 0:
                     time_dset[ep, step] = info["time"]
                     amp_dset[ep, step] = action
                     reward_dset[ep, step] = reward
